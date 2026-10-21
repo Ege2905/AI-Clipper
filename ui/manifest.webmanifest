@@ -1,0 +1,16 @@
+{
+  "name": "Clip Studio",
+  "short_name": "Clip Studio",
+  "description": "Automatisch Shorts aus Streams und Podcasts schneiden",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#0e0f13",
+  "theme_color": "#16181f",
+  "lang": "de",
+  "icons": [
+    {"src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable"},
+    {"src": "/icon.svg", "sizes": "any", "type": "image/svg+xml"}
+  ]
+}

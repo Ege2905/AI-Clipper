@@ -2,52 +2,19 @@
 chcp 65001 >nul
 title Clip Studio
 cd /d "%~dp0"
-
-where python >nul 2>nul
-if errorlevel 1 (
-  echo.
-  echo  Python fehlt. Bitte installieren und dabei "Add Python to PATH" anhaken:
-  echo  https://www.python.org/downloads/
-  start https://www.python.org/downloads/
-  pause
-  exit /b 1
+rem Already running (e.g. in the background)? Then just open it in the browser.
+curl -s -m 2 http://127.0.0.1:7860/api/ping >nul 2>nul
+if not errorlevel 1 (
+  start "" http://127.0.0.1:7860
+  exit /b 0
 )
-
-where ffmpeg >nul 2>nul
-if errorlevel 1 (
-  if not exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\ffmpeg.exe" (
-    echo  ffmpeg wird installiert ^(einmalig^)...
-    winget install -e --id Gyan.FFmpeg --accept-source-agreements --accept-package-agreements
-  )
-)
-
-where deno >nul 2>nul
-if errorlevel 1 (
-  if not exist "%LOCALAPPDATA%\Microsoft\WinGet\Links\deno.exe" (
-    echo  deno wird installiert ^(einmalig, fuer YouTube-Downloads^)...
-    winget install -e --id DenoLand.Deno --accept-source-agreements --accept-package-agreements
-  )
-)
-
-if not exist venv (
-  echo  Erster Start: richte Clip Studio ein ^(dauert ein paar Minuten^)...
-  python -m venv venv
-)
-call venv\Scripts\activate.bat
-python -m pip install -q --upgrade pip
-
-:run
-python -m pip install -q -r requirements.txt
+echo.
+echo  Clip Studio wird vorbereitet...
+call scripts\setup.bat
 if errorlevel 1 (
   echo  Installation fehlgeschlagen - siehe Meldungen oben.
   pause
   exit /b 1
 )
-python app.py
-if %errorlevel%==42 (
-  echo.
-  echo  Update installiert - Clip Studio startet neu...
-  set CLIPSTUDIO_NO_BROWSER=1
-  goto run
-)
+venv\Scripts\python launcher.py
 pause

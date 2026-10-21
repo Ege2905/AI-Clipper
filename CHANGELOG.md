@@ -1,5 +1,15 @@
 # Changelog
 
+## 2.0.0 – Web-App
+- Läuft als Server auf deinem PC: unsichtbar im Hintergrund, Autostart, Neustart nach Abstürzen
+- Updates kommen automatisch von GitHub (abschaltbar)
+- Konten: Admin + Gäste per Einladungslink, jeder sieht nur seine eigenen Projekte
+- Mit anderen teilen über Tailscale Funnel oder Cloudflare Tunnel (Anleitung im README)
+- Sicherheit: Passwort-Hashes, Login-Sperre nach Fehlversuchen, CSRF-Schutz, Gäste ohne Zugriff auf PC-Dateien
+- Uploads in Stücken (fortsetzbar, funktionieren durch Tunnel-Limits)
+- Als App aufs Handy installierbar
+- Produktions-Webserver (waitress)
+
 ## 1.3.1
 - Updates kommen jetzt aus github.com/Ege2905/AI-Clipper (Einstellungen → Updates)
 

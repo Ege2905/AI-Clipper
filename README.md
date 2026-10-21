@@ -2,35 +2,83 @@
 
 Creates clips of streams and videos with an AI that runs on your own system.
 
-Lokale App, die lange Videos (Stream-VODs, Podcasts, Interviews) automatisch in
+Clip Studio ist eine Web-App, die lange Videos (Stream-VODs, Podcasts, Interviews) automatisch in
 fertige 9:16-Clips mit Untertiteln verwandelt – für YouTube Shorts, Instagram Reels und TikTok.
-Alles läuft auf deinem Rechner, kostenlos. Nur die optionale KI-Auswahl nutzt die Claude-API.
+Sie läuft auf **deinem PC als Server** (nutzt deine Grafikkarte und lokale KI über Ollama) und wird
+im Browser bedient – auf dem PC, auf dem Handy und von eingeladenen Freunden.
 
 ![Layouts](example_layouts.png)
 
-## Herunterladen
+## Einmal einrichten (Windows)
 
-Auf <https://github.com/Ege2905/AI-Clipper> → grüner Button **Code** → **Download ZIP**,
-entpacken (z.B. nach `Videos\clip-studio`).
+1. **Python 3.12 oder 3.13** von <https://www.python.org/downloads/> installieren
+   („Add python.exe to PATH“ anhaken).
+2. Dieses Repo herunterladen: **Code → Download ZIP**, entpacken, z.B. nach `Videos\clip-studio`.
+3. **`autostart_einrichten.bat`** doppelklicken. Das installiert alles (Python-Pakete, ffmpeg, deno),
+   startet Clip Studio unsichtbar im Hintergrund und trägt es in den Autostart ein.
+4. Im Browser öffnet sich <http://127.0.0.1:7860> → **Admin-Konto anlegen**. Lesezeichen setzen – fertig.
 
-## Updates
+Ab jetzt läuft Clip Studio immer, wenn dein PC an ist. Kein Fenster, kein Starten, keine Downloads:
+**Updates kommen automatisch von GitHub** (alle 3 Stunden geprüft, installiert wenn gerade nichts läuft;
+abschaltbar unter ⚙ Einstellungen → Updates).
 
-In der App: ⚙ Einstellungen → **Updates** → „Nach Updates suchen“ → „Jetzt installieren“.
-Die App lädt die neue Version von GitHub, startet neu, und Projekte, Clips und Einstellungen
-bleiben erhalten. Steht ein Update bereit, erscheint oben auch „⬆ Update verfügbar“.
+| Datei | wofür |
+|---|---|
+| `autostart_einrichten.bat` | Hintergrund-Betrieb + Autostart einrichten (empfohlen) |
+| `start_windows.bat` | Clip Studio im Vordergrund starten (mit schwarzem Fenster) bzw. öffnen, falls es schon läuft |
+| `stop_server.bat` | Clip Studio beenden |
+| `autostart_entfernen.bat` | Autostart wieder entfernen |
+| `server.log` | Protokoll des Hintergrund-Servers (auch unter Einstellungen → Server) |
 
-## Starten
+Tipp: In den Windows-Energieoptionen den Ruhezustand ausschalten oder verlängern, wenn andere
+Clip Studio nutzen sollen – im Ruhezustand ist der Server nicht erreichbar.
 
-**Windows:** Doppelklick auf `start_windows.bat`
-**Mac:** Rechtsklick auf `start_mac.command` → Öffnen (beim ersten Mal, wegen Gatekeeper)
+**Mac:** Rechtsklick auf `start_mac.command` → Öffnen (Homebrew wird für ffmpeg gebraucht).
 
-Beim ersten Start wird alles automatisch eingerichtet (Python-Pakete, ffmpeg) – das dauert
-ein paar Minuten. Danach öffnet sich Clip Studio im Browser (http://127.0.0.1:7860).
-Das schwarze Fenster offen lassen, solange du die App benutzt.
+## Auf dem Handy
 
-Voraussetzung: **Python 3.10+** von <https://www.python.org/downloads/>
-(Windows: bei der Installation „Add Python to PATH“ anhaken). Auf dem Mac zusätzlich
-[Homebrew](https://brew.sh) für ffmpeg.
+Öffne die Adresse von Clip Studio im Handy-Browser (siehe „Mit anderen teilen“) →
+Browser-Menü → **„Zum Startbildschirm hinzufügen“** bzw. im Benutzer-Menü **„Als App installieren“**.
+Dann startet Clip Studio wie eine normale App.
+
+## Mit anderen teilen
+
+Clip Studio lauscht nur auf deinem PC (`127.0.0.1`). Damit Freunde (oder dein Handy unterwegs) es
+erreichen, brauchst du einen **Tunnel** – eine sichere Verbindung von einer öffentlichen
+HTTPS-Adresse zu deinem PC, ohne Portfreigabe am Router:
+
+### Variante A: Tailscale Funnel (kostenlos, keine eigene Domain nötig)
+1. [Tailscale](https://tailscale.com/download) installieren und anmelden.
+2. In der Eingabeaufforderung: `tailscale funnel --bg localhost:7860`
+   Beim ersten Mal zeigt Tailscale einen Link, um Funnel/HTTPS für dein Konto freizuschalten.
+3. Die angezeigte Adresse (`https://<pc-name>.<tailnet>.ts.net`) unter ⚙ Einstellungen →
+   **Öffentliche Adresse** eintragen.
+
+Hinweis: Funnel hat eine (nicht veröffentlichte) Bandbreitengrenze – für ein paar Freunde reicht das,
+für große Uploads lieber Links (YouTube/Twitch) statt Dateien verwenden.
+
+### Variante B: Cloudflare Tunnel (kostenlos, braucht eine eigene Domain)
+Stabiler bei viel Verkehr. Domain bei Cloudflare hinzufügen → Zero Trust → Networks → Tunnels →
+Tunnel anlegen, `cloudflared` installieren, Public Hostname auf `http://localhost:7860` zeigen lassen.
+Uploads werden in 32-MB-Stücken übertragen, deshalb stört das 100-MB-Limit von Cloudflare nicht.
+
+### Leute einladen
+⚙ Einstellungen → **Zugang & Benutzer** → **Einladungslink erstellen** → Link verschicken.
+Der Link gilt 7 Tage und nur einmal. Die Person wählt Name und Passwort und kann dann Projekte anlegen.
+
+Was Gäste dürfen – und was nicht:
+- ✅ Links (YouTube, Twitch, Kick …) und Videodateien hochladen, eigene Projekte und Clips verwalten
+- ❌ fremde Projekte sehen, Dateien auf deinem PC verwenden, Einstellungen/Updates/KI-Modelle ändern
+- Limits: max. Projekte gleichzeitig pro Gast und max. Upload-Größe (Einstellungen)
+- Projekte laufen nacheinander in einer gemeinsamen Warteschlange
+
+Sicherheit: Passwörter werden nur als Hash gespeichert, Logins nach 10 Fehlversuchen für 15 Minuten
+gesperrt, Sitzungen laufen nach 30 Tagen ab und enden bei Passwortänderung. Konten, Einstellungen
+(inkl. API-Key) und Projekte liegen nur auf deinem PC (`users.json`, `settings.json`, `jobs/`) und
+werden nie zu GitHub hochgeladen.
+
+**Verantwortung:** Wer Clip Studio öffentlich zugänglich macht, ist für die Nutzung verantwortlich.
+Lade nur Leute ein, denen du vertraust, und clippt nur Inhalte, für die ihr die Rechte habt.
 
 ## So benutzt du es
 
@@ -38,23 +86,19 @@ Voraussetzung: **Python 3.10+** von <https://www.python.org/downloads/>
 2. Art wählen: *Gaming-Stream*, *Just Chatting*, *Podcast* (setzt passende Einstellungen)
 3. **▶ Clips erstellen** – Fortschritt wird live angezeigt, Clips erscheinen nacheinander
 4. Clips ansehen, Caption-Text anpassen (speichert automatisch), **📋 Text kopieren**,
-   **⬇ Download**, und abhaken wo du gepostet hast (YouTube / Instagram / TikTok)
-5. Nicht zufrieden? **✂️ Neu schneiden** mit anderen Einstellungen – Download und
-   Transkript werden wiederverwendet, geht also schnell
+   **⬇ Download**, und abhaken wo gepostet wurde (YouTube / Instagram / TikTok)
+5. Nicht zufrieden? **✂️ Neu schneiden** – Download und Transkript werden wiederverwendet.
+   Fehler oder Abbruch? **🔁 Erneut versuchen** macht dort weiter, wo es aufgehört hat.
 
 Tipps:
-- Bei langen Streams unter *Erweiterte Einstellungen* einen **Abschnitt** angeben (z.B. `1:00:00-2:00:00`).
-- Für Gaming-Streams die **Facecam-Position** einmal eintragen (x,y,breite,höhe als Anteil
-  des Bildes, z.B. `0.80,0.02,0.18,0.25` = oben rechts) – dann sitzt der Split immer perfekt.
-- **KI-Auswahl** (⚙ Einstellungen → API-Key von console.anthropic.com): deutlich bessere
-  Momente bei Podcasts, plus Titel, Caption und Hashtags. Kostet je nach Länge ein paar Cent.
-- **Lokale KI statt API (kostenlos, offline):** [Ollama](https://ollama.com/download) installieren
-  und starten → in Clip Studio ⚙ Einstellungen → „Lokal (Ollama)“ → **Modell herunterladen**.
-  Empfehlung: `qwen3:8b` (ca. 5 GB, braucht ~8 GB Grafikspeicher oder RAM), bei schwachem PC
-  `qwen3:4b`, bei starker Grafikkarte `qwen3:14b`. Läuft ohne Grafikkarte auch, nur langsamer.
-  Lange Streams werden in Stücken analysiert. Liefert das Modell zu wenige Momente,
-  füllt die App automatisch mit der normalen Auswahl auf.
-- Die Clips liegen im Ordner `jobs/<projekt>/clips/` (Button **📂 Ordner öffnen**).
+- Lange Streams: unter *Erweiterte Einstellungen* einen **Abschnitt** angeben (z.B. `1:00:00-2:00:00`).
+- Gaming-Streams: **Facecam-Position** einmal eintragen (`x,y,breite,höhe` als Anteil des Bildes,
+  z.B. `0.80,0.02,0.18,0.25` = oben rechts).
+- **Lokale KI (kostenlos):** [Ollama](https://ollama.com/download) installieren → ⚙ Einstellungen →
+  „Lokal (Ollama)“ → **Modell herunterladen**. `qwen3:8b` (~8 GB Grafikspeicher/RAM),
+  `qwen3:4b` für schwächere PCs, `qwen3:14b` für starke Grafikkarten. Die KI bewertet ca. 30
+  vorausgewählte Stellen und schreibt Titel, Caption und Hashtags.
+- **Claude API** statt lokal: ⚙ Einstellungen → „Claude API“ → Key von console.anthropic.com.
 
 ---
 

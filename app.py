@@ -1,12 +1,16 @@
 #!/usr/bin/env python3
 """
-Clip Studio - lokale App rund um clipper.py.
+Clip Studio - web app around clipper.py.
 
-Start:  python app.py      (oder start_windows.bat / start_mac.command)
-Öffnet  http://127.0.0.1:7860 im Browser. Alles läuft lokal auf deinem Rechner.
+Runs on your own PC (uses your GPU / Ollama) and is reachable in the browser:
+  http://127.0.0.1:7860            on this PC
+  https://<your tunnel address>     for invited users (Tailscale Funnel / Cloudflare Tunnel)
+
+Start:  python app.py   (or start_windows.bat; autostart_einrichten.bat for background mode)
 """
 from __future__ import annotations
 
+import io
 import json
 import os
 import platform
@@ -19,21 +23,28 @@ import threading
 import time
 import uuid
 import webbrowser
+import zipfile
 from pathlib import Path
 
 from flask import Flask, abort, jsonify, request, send_file, send_from_directory
+from werkzeug.middleware.proxy_fix import ProxyFix
+
+from auth import Accounts, install as install_auth
 
 BASE = Path(__file__).resolve().parent
 JOBS = BASE / "jobs"
+UPLOADS = JOBS / "_uploads"
 SETTINGS_FILE = BASE / "settings.json"
 CLIPPER = BASE / "clipper.py"
 PORT = int(os.environ.get("CLIPSTUDIO_PORT", "7860"))
+HOST = os.environ.get("CLIPSTUDIO_HOST", "127.0.0.1")
 VERSION = (BASE / "VERSION").read_text(encoding="utf-8").strip() if (BASE / "VERSION").exists() else "0"
 RESTART_CODE = 42  # start scripts restart the app when it exits with this code
-# GitHub repo the in-app updater pulls from ("owner/name"); can be overridden in settings.json
 UPDATE_REPO = "Ege2905/AI-Clipper"
 UPDATE_BRANCH = "main"
-KEEP_ON_UPDATE = {"jobs", "venv", "settings.json", ".git"}
+KEEP_ON_UPDATE = {"jobs", "venv", "settings.json", ".git", "users.json", ".secret_key",
+                  "server.log", "app.pid", "launcher.pid", "stop.flag"}
+CHUNK_MAX = 64 * 1024 * 1024  # max bytes per upload request (tunnels limit request sizes)
 
 DEFAULT_SETTINGS = {
     "ai_provider": "ollama",          # "ollama" (lokal, kostenlos) or "anthropic" (Claude API)
@@ -46,6 +57,10 @@ DEFAULT_SETTINGS = {
     "whisper_model": "small",
     "language": "",
     "update_repo": "",
+    "auto_update": True,
+    "public_url": "",
+    "max_jobs_per_user": 2,
+    "max_upload_gb": 20,
 }
 
 # progress ranges per stage (overall 0..100)
@@ -60,16 +75,25 @@ STAGES = {
 }
 
 app = Flask(__name__, static_folder=None)
+app.config["MAX_CONTENT_LENGTH"] = CHUNK_MAX + 1024 * 1024
+app.wsgi_app = ProxyFix(app.wsgi_app, x_for=1, x_proto=1, x_host=1)  # behind a tunnel
+accounts = Accounts(BASE)
+PUBLIC_PATHS = {"/", "/api/me", "/api/setup", "/api/login", "/api/register", "/api/ping",
+                "/manifest.webmanifest", "/sw.js", "/icon-192.png", "/icon-512.png", "/icon.svg"}
+ADMIN_PREFIXES = ("/api/settings", "/api/update", "/api/ollama", "/api/admin")
+install_auth(app, accounts, PUBLIC_PATHS, ADMIN_PREFIXES)
+
 lock = threading.Lock()
 work_q: "queue.Queue[str]" = queue.Queue()
 jobs: dict[str, dict] = {}
 procs: dict[str, subprocess.Popen] = {}
 ID_RE = re.compile(r"^[a-f0-9]{10}$")
+UP_RE = re.compile(r"^[a-f0-9]{16}$")
 
 
 # ----------------------------------------------------------------------------- helpers
 def fix_path() -> None:
-    """Make ffmpeg findable right after a fresh winget/brew install."""
+    """Make ffmpeg/deno findable right after a fresh winget/brew install."""
     extra = []
     if platform.system() == "Windows":
         la = os.environ.get("LOCALAPPDATA", "")
@@ -91,10 +115,30 @@ def load_settings() -> dict:
     return s
 
 
+def save_settings(s: dict) -> None:
+    SETTINGS_FILE.write_text(json.dumps(s, indent=2), encoding="utf-8")
+
+
+def is_admin() -> bool:
+    return request.user["role"] == "admin"
+
+
 def job_dir(jid: str) -> Path:
     if not ID_RE.match(jid):
         abort(404)
     return JOBS / jid
+
+
+def own_job(jid: str) -> dict:
+    """The job if the current user may see it (owner or admin), else 404."""
+    job_dir(jid)
+    job = jobs.get(jid)
+    if not job:
+        abort(404)
+    owner = job.get("owner")
+    if not is_admin() and owner != request.user["name"]:
+        abort(404)
+    return job
 
 
 def save_job(job: dict) -> None:
@@ -114,9 +158,18 @@ def load_all_jobs() -> None:
             continue
         if job.get("status") in ("running", "queued"):
             job["status"] = "error"
-            job["error"] = "Unterbrochen (App wurde geschlossen)"
+            job["error"] = "Unterbrochen (App wurde neu gestartet) – „Erneut versuchen“ macht weiter"
             save_job(job)
         jobs[job["id"]] = job
+
+
+def adopt_ownerless_jobs(admin: str) -> None:
+    """Projects from before accounts existed belong to the admin."""
+    with lock:
+        for job in jobs.values():
+            if not job.get("owner"):
+                job["owner"] = admin
+                save_job(job)
 
 
 def log_line(jid: str, line: str) -> None:
@@ -165,6 +218,43 @@ def write_clips(jid: str, clips: list[dict]) -> None:
         json.dumps(keep, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+SECTION_RE = re.compile(r"^\d{1,2}(:\d{2}){0,2}-\d{1,2}(:\d{2}){0,2}$")
+FACECAM_RE = re.compile(r"^\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*$")
+
+
+def clean_params(p: dict, admin: bool) -> dict:
+    """Whitelist + validate job parameters coming from the browser."""
+    try:
+        return _clean_params(p, admin)
+    except (TypeError, ValueError):
+        abort(jsonify_error("Ungültige Einstellungen", 400))
+
+
+def _clean_params(p: dict, admin: bool) -> dict:
+    out = {
+        "num_clips": max(1, min(20, int(p.get("num_clips", 5)))),
+        "min": max(5.0, min(170.0, float(p.get("min", 20)))),
+        "max": max(10.0, min(180.0, float(p.get("max", 60)))),
+        "layout": p.get("layout") if p.get("layout") in ("auto", "track", "split", "fit") else "auto",
+        "language": p.get("language") if re.match(r"^[a-z]{2}$", p.get("language") or "") else "",
+        "whisper_model": p.get("whisper_model") if p.get("whisper_model") in
+        ("tiny", "base", "small", "medium", "large-v3") else "",
+        "words_per_line": max(1, min(4, int(p.get("words_per_line", 3)))),
+        "upper": bool(p.get("upper", True)),
+        "title_overlay": bool(p.get("title_overlay", True)),
+        "ai": bool(p.get("ai")),
+        "section": p.get("section", "").replace(" ", "") if SECTION_RE.match(p.get("section", "").replace(" ", "")) else "",
+        "facecam": p.get("facecam", "") if FACECAM_RE.match(p.get("facecam", "") or "") else "",
+        "hashtags": " ".join(t for t in re.split(r"\s+", p.get("hashtags", "") or "")
+                             if re.match(r"^#[\w]{1,40}$", t, re.UNICODE))[:300],
+    }
+    if out["min"] >= out["max"]:
+        out["min"] = max(5.0, out["max"] - 10)
+    if admin and p.get("transcript"):
+        out["transcript"] = str(p["transcript"])
+    return out
+
+
 # ----------------------------------------------------------------------------- worker
 def build_cmd(job: dict, settings: dict) -> list[str]:
     p = job["params"]
@@ -173,7 +263,7 @@ def build_cmd(job: dict, settings: dict) -> list[str]:
            "--min", str(float(p.get("min", 20))), "--max", str(float(p.get("max", 60))),
            "--layout", p.get("layout", "auto"),
            "--whisper-model", p.get("whisper_model") or settings["whisper_model"],
-           "--font", p.get("font") or settings["font"],
+           "--font", settings["font"],
            "--words-per-line", str(int(p.get("words_per_line", 3))),
            "-o", str(JOBS / job["id"] / "clips")]
     lang = p.get("language") or settings["language"]
@@ -181,7 +271,7 @@ def build_cmd(job: dict, settings: dict) -> list[str]:
         cmd += ["--language", lang]
     if p.get("section"):
         cmd += ["--section", p["section"]]
-    if p.get("transcript"):  # advanced: reuse an existing transcript.json
+    if p.get("transcript"):  # admin only: reuse an existing transcript.json
         cmd += ["--transcript", p["transcript"]]
     if p.get("facecam"):
         cmd += ["--facecam", p["facecam"]]
@@ -325,10 +415,11 @@ def worker() -> None:
                 save_job(jobs[jid])
 
 
-def new_job(params: dict, title: str, cache_from: Path | None = None) -> dict:
+def new_job(params: dict, title: str, owner: str, cache_from: Path | None = None) -> dict:
     jid = uuid.uuid4().hex[:10]
     job = {"id": jid, "title": title, "params": params, "status": "queued", "progress": 0,
-           "stage": "In Warteschlange", "created": time.time(), "posted": {}, "error": ""}
+           "stage": "In Warteschlange", "created": time.time(), "posted": {}, "error": "",
+           "owner": owner}
     (JOBS / jid / "clips").mkdir(parents=True, exist_ok=True)
     if cache_from and cache_from.exists():  # reuse download + transcript + loudness
         new_work = JOBS / jid / "clips" / ".work"
@@ -339,6 +430,8 @@ def new_job(params: dict, title: str, cache_from: Path | None = None) -> dict:
                     os.link(f, new_work / f.name)
                 except OSError:
                     shutil.copy2(f, new_work / f.name)
+            elif f.is_dir():
+                shutil.copytree(f, new_work / f.name, dirs_exist_ok=True)
     with lock:
         jobs[jid] = job
         save_job(job)
@@ -346,17 +439,70 @@ def new_job(params: dict, title: str, cache_from: Path | None = None) -> dict:
     return job
 
 
+def active_jobs_of(user: str) -> int:
+    return sum(1 for j in jobs.values() if j.get("owner") == user and j["status"] in ("queued", "running"))
+
+
+def check_quota() -> None:
+    if is_admin():
+        return
+    limit = int(load_settings().get("max_jobs_per_user", 2))
+    if active_jobs_of(request.user["name"]) >= limit:
+        abort(jsonify_error(f"Du hast schon {limit} Projekte in Arbeit – warte, bis eins fertig ist.", 429))
+
+
+def jsonify_error(msg: str, code: int):
+    r = jsonify({"error": msg})
+    r.status_code = code
+    return r
+
+
 def summary(job: dict) -> dict:
-    return {k: job.get(k) for k in ("id", "title", "status", "progress", "stage", "created",
-                                    "error", "clip_count")}
+    keys = ("id", "title", "status", "progress", "stage", "created", "error", "clip_count", "owner")
+    return {k: job.get(k) for k in keys}
 
 
-# ----------------------------------------------------------------------------- routes
+# ----------------------------------------------------------------------------- pages / pwa
 @app.get("/")
 def index():
-    return send_from_directory(BASE / "ui", "index.html")
+    r = send_from_directory(BASE / "ui", "index.html")
+    r.headers["Cache-Control"] = "no-cache"
+    return r
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    return send_from_directory(BASE / "ui", "manifest.webmanifest", mimetype="application/manifest+json")
+
+
+@app.get("/sw.js")
+def service_worker():
+    r = send_from_directory(BASE / "ui", "sw.js", mimetype="text/javascript")
+    r.headers["Cache-Control"] = "no-cache"
+    return r
+
+
+@app.get("/icon-192.png")
+@app.get("/icon-512.png")
+@app.get("/icon.svg")
+def icons():
+    return send_from_directory(BASE / "ui", request.path.lstrip("/"), max_age=86400)
+
+
+@app.get("/api/ping")
+def ping():
+    return jsonify({"ok": True, "app": "clip-studio", "version": VERSION})
+
+
+@app.after_request
+def security_headers(r):
+    r.headers.setdefault("X-Content-Type-Options", "nosniff")
+    r.headers.setdefault("X-Frame-Options", "DENY")
+    r.headers.setdefault("Referrer-Policy", "same-origin")
+    return r
+
+
+# ----------------------------------------------------------------------------- system / ai
 def ollama_status(url: str) -> dict:
     import urllib.request
     try:
@@ -379,27 +525,28 @@ def system():
             return True
         except Exception:
             return False
-    import cv2
     s = load_settings()
     ol = ollama_status(s.get("ollama_url", DEFAULT_SETTINGS["ollama_url"]))
     if s.get("ai_provider") == "anthropic":
         has_ai = bool(s.get("api_key")) and has_mod("anthropic")
     else:
         has_ai = ol["running"] and model_installed(s.get("ollama_model", ""), ol["models"])
-    return jsonify({
+    info = {"has_ai": has_ai, "provider": s.get("ai_provider", "ollama"), "version": VERSION,
+            "ollama_model": s.get("ollama_model"), "max_upload_gb": s.get("max_upload_gb", 20)}
+    if not is_admin():  # guests only need to know whether AI is available
+        return jsonify(info)
+    import cv2
+    return jsonify({**info,
         "ffmpeg": shutil.which("ffmpeg") is not None,
         "whisper": has_mod("faster_whisper"),
         "ytdlp": has_mod("yt_dlp"),
         "opencv_ok": hasattr(cv2, "CascadeClassifier"),
         "anthropic": has_mod("anthropic"),
         "has_key": bool(s.get("api_key")),
-        "provider": s.get("ai_provider", "ollama"),
         "ollama": ol,
-        "ollama_model": s.get("ollama_model"),
         "ollama_model_ok": model_installed(s.get("ollama_model", ""), ol["models"]),
-        "has_ai": has_ai,
         "os": platform.system(),
-        "version": VERSION,
+        "local": request.remote_addr in ("127.0.0.1", "::1") and not request.headers.get("X-Forwarded-For"),
     })
 
 
@@ -432,6 +579,8 @@ def _pull(model: str, url: str) -> None:
 def ollama_pull():
     s = load_settings()
     model = (request.get_json(silent=True) or {}).get("model") or s["ollama_model"]
+    if not re.match(r"^[\w.:/\-]{1,80}$", model):
+        return jsonify_error("Ungültiger Modellname", 400)
     if not pull_state["active"]:
         threading.Thread(target=_pull, args=(model, s["ollama_url"]), daemon=True).start()
     return jsonify(pull_state)
@@ -458,15 +607,14 @@ def _fetch(url: str, timeout: int = 15) -> bytes:
         return r.read()
 
 
-@app.get("/api/update/check")
-def update_check():
+def check_for_update() -> dict:
     repo = _repo()
     if not repo:
-        return jsonify({"current": VERSION, "configured": False})
+        return {"current": VERSION, "configured": False}
     try:
         latest = _fetch(f"https://raw.githubusercontent.com/{repo}/{UPDATE_BRANCH}/VERSION?t={int(time.time())}").decode().strip()
     except Exception as e:
-        return jsonify({"current": VERSION, "configured": True, "error": f"GitHub nicht erreichbar: {e}"})
+        return {"current": VERSION, "configured": True, "error": f"GitHub nicht erreichbar: {e}"}
     notes = ""
     try:
         cl = _fetch(f"https://raw.githubusercontent.com/{repo}/{UPDATE_BRANCH}/CHANGELOG.md?t={int(time.time())}").decode()
@@ -474,29 +622,23 @@ def update_check():
         notes = m.group(0).strip() if m else ""
     except Exception:
         pass
-    return jsonify({"current": VERSION, "latest": latest, "configured": True, "repo": repo,
-                    "available": _vtuple(latest) > _vtuple(VERSION), "notes": notes})
+    return {"current": VERSION, "latest": latest, "configured": True, "repo": repo,
+            "available": _vtuple(latest) > _vtuple(VERSION), "notes": notes}
 
 
-@app.post("/api/update/apply")
-def update_apply():
-    import io
-    import zipfile
+def busy() -> bool:
+    return any(j["status"] in ("running", "queued") for j in jobs.values())
+
+
+def install_update() -> dict:
+    """Download the repo zip from GitHub, overwrite program files, then restart."""
     repo = _repo()
-    if not repo:
-        return jsonify({"error": "Kein Update-Repository eingestellt"}), 400
-    with lock:
-        if any(j["status"] in ("running", "queued") for j in jobs.values()):
-            return jsonify({"error": "Bitte warten, bis alle Projekte fertig sind"}), 409
-    try:
-        data = _fetch(f"https://codeload.github.com/{repo}/zip/refs/heads/{UPDATE_BRANCH}", timeout=120)
-        zf = zipfile.ZipFile(io.BytesIO(data))
-    except Exception as e:
-        return jsonify({"error": f"Download fehlgeschlagen: {e}"}), 502
+    data = _fetch(f"https://codeload.github.com/{repo}/zip/refs/heads/{UPDATE_BRANCH}", timeout=120)
+    zf = zipfile.ZipFile(io.BytesIO(data))
     names = zf.namelist()
     root = names[0].split("/")[0] + "/"
     if not any(n == root + "app.py" for n in names):
-        return jsonify({"error": "Update-Paket sieht falsch aus (kein app.py)"}), 502
+        raise RuntimeError("Update-Paket sieht falsch aus (kein app.py)")
     written = 0
     for n in names:
         rel = n[len(root):]
@@ -505,17 +647,53 @@ def update_apply():
         dest = (BASE / rel).resolve()
         if BASE not in dest.parents:
             continue
+        content = zf.read(n)
+        if dest.exists() and dest.read_bytes() == content:
+            continue  # unchanged (also avoids touching running .bat files)
         dest.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest.with_suffix(dest.suffix + ".new")
-        tmp.write_bytes(zf.read(n))
+        tmp.write_bytes(content)
         os.replace(tmp, dest)
         written += 1
     new_version = (BASE / "VERSION").read_text(encoding="utf-8").strip()
-    # restart: the start script reinstalls requirements and starts the app again
+    print(f"[update] installed {new_version} ({written} files), restarting", flush=True)
     threading.Timer(1.0, lambda: os._exit(RESTART_CODE)).start()
-    return jsonify({"ok": True, "files": written, "version": new_version})
+    return {"ok": True, "files": written, "version": new_version}
 
 
+@app.get("/api/update/check")
+def update_check():
+    return jsonify(check_for_update())
+
+
+@app.post("/api/update/apply")
+def update_apply():
+    if busy():
+        return jsonify_error("Bitte warten, bis alle Projekte fertig sind", 409)
+    try:
+        return jsonify(install_update())
+    except Exception as e:
+        return jsonify_error(f"Update fehlgeschlagen: {e}", 502)
+
+
+def auto_updater() -> None:
+    """Checks GitHub every 3 hours; installs when enabled and nothing is running."""
+    time.sleep(60)
+    while True:
+        try:
+            if load_settings().get("auto_update", True):
+                info = check_for_update()
+                if info.get("available"):
+                    while busy():
+                        time.sleep(120)
+                    install_update()
+                    return
+        except Exception as e:
+            print(f"[update] auto update failed: {e}", flush=True)
+        time.sleep(3 * 3600)
+
+
+# ----------------------------------------------------------------------------- settings / admin
 @app.get("/api/settings")
 def get_settings():
     s = load_settings()
@@ -528,48 +706,140 @@ def get_settings():
 def post_settings():
     s = load_settings()
     data = request.get_json(force=True) or {}
-    for k in DEFAULT_SETTINGS:
+    for k, default in DEFAULT_SETTINGS.items():
         if k in data and data[k] is not None:
             if k == "api_key" and data[k] == "":
                 continue  # empty field = keep existing key
-            s[k] = str(data[k]).strip()
+            if isinstance(default, bool):
+                s[k] = bool(data[k])
+            elif isinstance(default, int):
+                try:
+                    s[k] = max(1, int(data[k]))
+                except (TypeError, ValueError):
+                    pass
+            else:
+                s[k] = str(data[k]).strip()
     if data.get("clear_key"):
         s["api_key"] = ""
-    SETTINGS_FILE.write_text(json.dumps(s, indent=2), encoding="utf-8")
+    save_settings(s)
     return get_settings()
 
 
+@app.post("/api/admin/restart")
+def admin_restart():
+    if busy():
+        return jsonify_error("Bitte warten, bis alle Projekte fertig sind", 409)
+    threading.Timer(0.8, lambda: os._exit(RESTART_CODE)).start()
+    return jsonify({"ok": True})
+
+
+@app.get("/api/admin/log")
+def admin_log():
+    f = BASE / "server.log"
+    lines = f.read_text(encoding="utf-8", errors="replace").splitlines()[-300:] if f.exists() else []
+    return jsonify({"log": lines})
+
+
+# ----------------------------------------------------------------------------- jobs
 @app.get("/api/jobs")
 def list_jobs():
     with lock:
         items = sorted(jobs.values(), key=lambda j: -j["created"])
+        if not is_admin():
+            items = [j for j in items if j.get("owner") == request.user["name"]]
         return jsonify([summary(j) for j in items])
 
 
 @app.post("/api/jobs")
 def create_job():
-    if request.content_type and request.content_type.startswith("multipart/"):
-        params = json.loads(request.form.get("params", "{}"))
-        f = request.files.get("file")
-        if not f:
-            return jsonify({"error": "Keine Datei"}), 400
-        jid_tmp = uuid.uuid4().hex[:10]
-        up = JOBS / "_uploads" / jid_tmp
-        up.mkdir(parents=True, exist_ok=True)
-        dest = up / safe_name(f.filename or "video.mp4")
-        f.save(dest)
-        params["source"] = str(dest)
-        title = Path(f.filename or "Video").stem
+    check_quota()
+    raw = request.get_json(force=True) or {}
+    params = clean_params(raw, is_admin())
+    src = (raw.get("source") or "").strip().strip('"')
+    if not src:
+        return jsonify_error("Bitte einen Link oder eine Datei angeben", 400)
+    if re.match(r"^https?://[^\s]+$", src):
+        title = src
+    elif is_admin() and Path(src).is_file():  # local file paths: only the PC owner
+        title = Path(src).stem
     else:
-        params = request.get_json(force=True) or {}
-        src = (params.get("source") or "").strip().strip('"')
-        if not src:
-            return jsonify({"error": "Bitte einen Link oder eine Datei angeben"}), 400
-        if not re.match(r"^https?://", src) and not Path(src).exists():
-            return jsonify({"error": "Datei nicht gefunden: " + src}), 400
-        params["source"] = src
-        title = Path(src).stem if Path(src).exists() else src
-    job = new_job(params, title)
+        return jsonify_error("Bitte einen gültigen Link (https://…) angeben oder eine Datei hochladen", 400)
+    params["source"] = src
+    job = new_job(params, title, request.user["name"])
+    return jsonify(summary(job))
+
+
+# chunked uploads: POST /api/uploads -> PUT /api/uploads/<id>?offset=N (repeat) -> POST .../finish
+def _upload(uid: str) -> tuple[Path, dict]:
+    if not UP_RE.match(uid):
+        abort(404)
+    d = UPLOADS / uid
+    meta_f = d / "meta.json"
+    if not meta_f.exists():
+        abort(404)
+    meta = json.loads(meta_f.read_text(encoding="utf-8"))
+    if meta["owner"] != request.user["name"]:
+        abort(404)
+    return d, meta
+
+
+@app.post("/api/uploads")
+def upload_start():
+    check_quota()
+    data = request.get_json(force=True) or {}
+    size = int(data.get("size", 0))
+    limit = float(load_settings().get("max_upload_gb", 20)) * 1024 ** 3
+    if size <= 0 or size > limit:
+        return jsonify_error(f"Datei zu groß (max. {load_settings().get('max_upload_gb', 20)} GB)", 413)
+    free = shutil.disk_usage(JOBS).free
+    if size * 1.5 > free:
+        return jsonify_error("Nicht genug Speicherplatz auf dem Server", 507)
+    uid = uuid.uuid4().hex[:16]
+    d = UPLOADS / uid
+    d.mkdir(parents=True)
+    name = safe_name(data.get("name") or "video.mp4")
+    meta = {"owner": request.user["name"], "name": name, "size": size, "created": time.time()}
+    (d / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
+    (d / (name + ".part")).touch()
+    return jsonify({"id": uid, "chunk": 32 * 1024 * 1024, "received": 0})
+
+
+@app.put("/api/uploads/<uid>")
+def upload_chunk(uid):
+    d, meta = _upload(uid)
+    part = d / (meta["name"] + ".part")
+    have = part.stat().st_size
+    offset = int(request.args.get("offset", -1))
+    if offset != have:  # client resends from what we actually have
+        return jsonify({"received": have, "resync": True}), 409
+    body = request.get_data(cache=False)
+    if have + len(body) > meta["size"]:
+        return jsonify_error("Mehr Daten als angekündigt", 400)
+    with open(part, "ab") as fh:
+        fh.write(body)
+    return jsonify({"received": have + len(body)})
+
+
+@app.get("/api/uploads/<uid>")
+def upload_status(uid):
+    d, meta = _upload(uid)
+    return jsonify({"received": (d / (meta["name"] + ".part")).stat().st_size, "size": meta["size"]})
+
+
+@app.post("/api/uploads/<uid>/finish")
+def upload_finish(uid):
+    check_quota()
+    d, meta = _upload(uid)
+    part = d / (meta["name"] + ".part")
+    if part.stat().st_size != meta["size"]:
+        return jsonify_error("Upload unvollständig", 400)
+    final = d / meta["name"]
+    os.replace(part, final)
+    params = clean_params(request.get_json(force=True) or {}, is_admin())
+    params["source"] = str(final)
+    job = new_job(params, Path(meta["name"]).stem, request.user["name"])
+    meta["job"] = job["id"]
+    (d / "meta.json").write_text(json.dumps(meta), encoding="utf-8")
     return jsonify(summary(job))
 
 
@@ -577,23 +847,25 @@ def create_job():
 def get_job(jid):
     d = job_dir(jid)
     with lock:
-        job = jobs.get(jid)
-        if not job:
-            abort(404)
-        job = json.loads(json.dumps(job))
+        job = json.loads(json.dumps(own_job(jid)))
     log = (d / "log.txt").read_text(encoding="utf-8", errors="replace").splitlines()[-200:] \
         if (d / "log.txt").exists() else []
+    if not is_admin():  # don't leak server paths to guests
+        log = [re.sub(r"([A-Za-z]:)?[\\/][^\s\"']*[\\/]", "…/", l) for l in log]
+        job["params"] = {k: v for k, v in job["params"].items() if k != "transcript"}
+        if not re.match(r"^https?://", job["params"].get("source", "")):
+            job["params"]["source"] = "Hochgeladene Datei"
     job["log"] = log
     job["clips"] = read_clips(jid)
-    job["queue_pos"] = list(work_q.queue).index(jid) + 1 if jid in list(work_q.queue) else 0
+    q = list(work_q.queue)
+    job["queue_pos"] = q.index(jid) + 1 if jid in q else 0
     return jsonify(job)
 
 
 @app.post("/api/jobs/<jid>/cancel")
 def cancel_job(jid):
-    job_dir(jid)
     with lock:
-        job = jobs.get(jid) or abort(404)
+        job = own_job(jid)
         if job["status"] in ("queued", "running"):
             job["status"] = "cancelled"
             job["stage"] = "Abgebrochen"
@@ -607,6 +879,7 @@ def cancel_job(jid):
 @app.delete("/api/jobs/<jid>")
 def delete_job(jid):
     d = job_dir(jid)
+    own_job(jid)
     cancel_job(jid)
     p = procs.get(jid)
     if p:
@@ -617,7 +890,7 @@ def delete_job(jid):
     with lock:
         job = jobs.pop(jid, None)
     src = (job or {}).get("params", {}).get("source", "")
-    if "_uploads" in src:
+    if "_uploads" in src and Path(src).parent.parent == UPLOADS:
         shutil.rmtree(Path(src).parent, ignore_errors=True)
     shutil.rmtree(d, ignore_errors=True)
     return jsonify({"ok": True})
@@ -626,11 +899,12 @@ def delete_job(jid):
 @app.post("/api/jobs/<jid>/retry")
 def retry_job(jid):
     """Run a failed/cancelled job again in place - keeps download, transcript parts etc."""
-    job_dir(jid)
     with lock:
-        job = jobs.get(jid) or abort(404)
+        job = own_job(jid)
         if job["status"] not in ("error", "cancelled"):
-            return jsonify({"error": "Projekt läuft bereits oder ist fertig"}), 400
+            return jsonify_error("Projekt läuft bereits oder ist fertig", 400)
+    check_quota()
+    with lock:
         job.update(status="queued", progress=0, error="", stage="In Warteschlange")
         save_job(job)
     log_line(jid, "\n----- erneuter Versuch -----")
@@ -643,17 +917,22 @@ def rerun_job(jid):
     """New job with changed settings; reuses download + transcript of the old one."""
     old = job_dir(jid)
     with lock:
-        src_job = jobs.get(jid) or abort(404)
+        src_job = own_job(jid)
         base_params = dict(src_job["params"])
         title = re.sub(r" \(neu geschnitten\)$", "", src_job.get("title", "")) + " (neu geschnitten)"
-    params = {**base_params, **(request.get_json(force=True) or {})}
+        owner = src_job.get("owner") or request.user["name"]
+    check_quota()
+    params = clean_params({**base_params, **(request.get_json(force=True) or {})}, is_admin())
     params["source"] = base_params["source"]
-    job = new_job(params, title, cache_from=old / "clips" / ".work")
+    if base_params.get("transcript"):
+        params["transcript"] = base_params["transcript"]
+    job = new_job(params, title, owner, cache_from=old / "clips" / ".work")
     return jsonify(summary(job))
 
 
 @app.get("/media/<jid>/<fname>")
 def media(jid, fname):
+    own_job(jid)
     p = clip_file(jid, fname)
     if not p.exists():
         abort(404)
@@ -663,6 +942,7 @@ def media(jid, fname):
 
 @app.get("/thumb/<jid>/<fname>")
 def thumb(jid, fname):
+    own_job(jid)
     p = clip_file(jid, fname)
     if not p.exists():
         abort(404)
@@ -678,20 +958,23 @@ def thumb(jid, fname):
 
 @app.post("/api/jobs/<jid>/clips/<fname>")
 def update_clip(jid, fname):
+    own_job(jid)
     p = clip_file(jid, fname)
     data = request.get_json(force=True) or {}
     if "post_text" in data:
-        p.with_suffix(".txt").write_text(data["post_text"], encoding="utf-8")
-    if "posted" in data:
+        p.with_suffix(".txt").write_text(str(data["post_text"])[:5000], encoding="utf-8")
+    if "posted" in data and isinstance(data["posted"], dict):
         with lock:
             job = jobs[jid]
-            job.setdefault("posted", {})[p.name] = data["posted"]
+            job.setdefault("posted", {})[p.name] = {k: bool(v) for k, v in data["posted"].items()
+                                                    if k in ("yt", "ig", "tt")}
             save_job(job)
     return jsonify({"ok": True})
 
 
 @app.delete("/api/jobs/<jid>/clips/<fname>")
 def delete_clip(jid, fname):
+    own_job(jid)
     p = clip_file(jid, fname)
     clips = [c for c in read_clips(jid) if c["file"] != p.name]
     write_clips(jid, clips)
@@ -704,36 +987,61 @@ def delete_clip(jid, fname):
     return jsonify({"ok": True})
 
 
-@app.post("/api/jobs/<jid>/open")
+@app.post("/api/admin/open/<jid>")
 def open_folder(jid):
+    """Opens the clip folder in Explorer - only useful when sitting at the server PC."""
+    own_job(jid)
     d = job_dir(jid) / "clips"
-    target = d
     fname = (request.get_json(silent=True) or {}).get("file")
     try:
         if platform.system() == "Windows":
             if fname:
                 subprocess.Popen(["explorer", "/select,", str(clip_file(jid, fname))])
             else:
-                os.startfile(str(target))  # type: ignore[attr-defined]
+                os.startfile(str(d))  # type: ignore[attr-defined]
         elif platform.system() == "Darwin":
-            subprocess.Popen(["open", "-R", str(clip_file(jid, fname))] if fname else ["open", str(target)])
+            subprocess.Popen(["open", "-R", str(clip_file(jid, fname))] if fname else ["open", str(d)])
         else:
-            subprocess.Popen(["xdg-open", str(target)])
+            subprocess.Popen(["xdg-open", str(d)])
     except Exception as e:
-        return jsonify({"error": str(e), "path": str(target)}), 500
-    return jsonify({"ok": True, "path": str(target)})
+        return jsonify({"error": str(e), "path": str(d)}), 500
+    return jsonify({"ok": True, "path": str(d)})
+
+
+def cleanup_uploads() -> None:
+    """Remove abandoned uploads older than 2 days (finished ones belong to a job)."""
+    if not UPLOADS.exists():
+        return
+    for d in UPLOADS.iterdir():
+        try:
+            meta = json.loads((d / "meta.json").read_text(encoding="utf-8"))
+            if not meta.get("job") and time.time() - meta["created"] > 2 * 86400:
+                shutil.rmtree(d, ignore_errors=True)
+        except (OSError, ValueError, KeyError):
+            continue
 
 
 # ----------------------------------------------------------------------------- main
 def main() -> None:
     fix_path()
     load_all_jobs()
+    cleanup_uploads()
+    admins = [u["name"] for u in accounts.list() if u["role"] == "admin"]
+    if admins:
+        adopt_ownerless_jobs(admins[0])
+    (BASE / "app.pid").write_text(str(os.getpid()))
     threading.Thread(target=worker, daemon=True).start()
+    threading.Thread(target=auto_updater, daemon=True).start()
     url = f"http://127.0.0.1:{PORT}"
-    print(f"\n  Clip Studio läuft auf {url}\n  (Fenster offen lassen, Strg+C zum Beenden)\n", flush=True)
+    print(f"\n  Clip Studio {VERSION} läuft auf {url}\n", flush=True)
     if not os.environ.get("CLIPSTUDIO_NO_BROWSER"):
-        threading.Timer(1.2, lambda: webbrowser.open(url)).start()
-    app.run(host="127.0.0.1", port=PORT, threaded=True, debug=False)
+        threading.Timer(1.5, lambda: webbrowser.open(url)).start()
+    try:
+        from waitress import serve
+        serve(app, host=HOST, port=PORT, threads=12, channel_timeout=600,
+              max_request_body_size=CHUNK_MAX + 1024 * 1024, ident="clip-studio")
+    except ImportError:
+        app.run(host=HOST, port=PORT, threaded=True, debug=False)
 
 
 if __name__ == "__main__":

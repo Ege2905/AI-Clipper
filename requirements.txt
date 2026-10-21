@@ -1,6 +1,7 @@
 flask>=3.0
+waitress>=3.0              # production web server (Windows-friendly)
 faster-whisper>=1.0
 yt-dlp[default]            # includes YouTube JS challenge solver (needs deno)
 numpy
 opencv-python-headless<5   # OpenCV 5 removed the built-in face detector
-anthropic                  # only needed for the AI mode
+anthropic                  # only needed for the Claude API mode

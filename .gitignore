@@ -1,6 +1,12 @@
 jobs/
 venv/
 settings.json
+users.json
+.secret_key
+server.log
+app.pid
+launcher.pid
+stop.flag
 __pycache__/
 *.pyc
 .DS_Store

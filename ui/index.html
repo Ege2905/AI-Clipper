@@ -4,6 +4,10 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Clip Studio</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<meta name="theme-color" content="#16181f">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Cpath d='M12 9l11 7-11 7z' fill='white'/%3E%3C/svg%3E">
 <style>
 :root{
@@ -19,7 +23,7 @@
   }
 }
 *{box-sizing:border-box}
-[hidden]{display:none!important}
+[hidden],.hide-role,body:not(.is-admin) .admin-only{display:none!important}
 html,body{margin:0;height:100%}
 body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
 button,input,select,textarea{font:inherit;color:inherit}
@@ -103,6 +107,24 @@ details.adv{margin-top:6px} details.adv summary{cursor:pointer;color:var(--muted
 .stage{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:8px}
 .errbox{background:color-mix(in srgb,var(--err) 10%,transparent);border:1px solid color-mix(in srgb,var(--err) 40%,transparent);color:var(--text);padding:12px 14px;border-radius:10px;margin-top:12px}
 .warnbox{background:color-mix(in srgb,var(--warn) 10%,transparent);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);padding:10px 14px;border-radius:10px;margin-top:12px;font-size:13px}
+.authwrap{position:fixed;inset:0;display:grid;place-items:center;padding:16px;background:radial-gradient(1200px 600px at 20% -10%,color-mix(in srgb,var(--accent) 25%,transparent),transparent),var(--bg);z-index:30}
+.authcard{width:min(400px,100%);background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:28px;box-shadow:var(--shadow)}
+.authcard h1{font-size:22px;margin:14px 0 4px}
+.authcard .field{margin-top:14px}
+.authcard .btn{width:100%;margin-top:18px}
+.autherr{color:var(--err);font-size:13px;margin-top:10px;min-height:18px}
+.userchip{display:flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px 4px 4px;border-radius:99px;border:1px solid var(--line);background:var(--panel2);position:relative}
+.userchip .av{width:26px;height:26px;border-radius:50%;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;font-weight:700;font-size:12px;color:#fff}
+.menu{position:absolute;right:0;top:calc(100% + 6px);background:var(--panel);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow);min-width:200px;padding:6px;display:none;z-index:15}
+.menu.open{display:block}
+.menu button{display:block;width:100%;text-align:left;background:none;border:0;padding:9px 12px;border-radius:8px;cursor:pointer}
+.menu button:hover{background:var(--panel2)}
+.menu .mhead{padding:8px 12px;font-size:12px;color:var(--muted);border-bottom:1px solid var(--line);margin-bottom:4px}
+.ulist{display:grid;gap:6px;margin-top:8px}
+.ulist div{display:flex;align-items:center;justify-content:space-between;gap:8px;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px 10px;font-size:13px}
+.owner{font-size:11px;color:var(--accent);margin-left:4px}
+.linkbox{display:flex;gap:6px;margin-top:8px}
+.linkbox input{font-family:ui-monospace,monospace;font-size:12px}
 .clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
 .clip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
 .clip video{width:100%;aspect-ratio:9/16;background:#000;display:block;object-fit:contain}
@@ -132,6 +154,11 @@ pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:
 .welcome{display:flex;gap:14px;align-items:center;margin-bottom:6px}
 .kbd{font-family:ui-monospace,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
 @media (max-width:820px){
+  .lbl,#systext,#uName{display:none}
+  .userchip{padding:3px}
+  header{gap:8px;padding:0 12px}
+  .jobhead{flex-direction:column;gap:10px}
+  .jobhead > .row{width:100%}
   .app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr}
   header{grid-column:1}
   aside{max-height:180px;border-right:0;border-bottom:1px solid var(--line)}
@@ -144,9 +171,17 @@ pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:
   <header>
     <div class="logo"><i></i>Clip Studio</div>
     <div class="spacer"></div>
-    <span class="pill" id="updpill" hidden style="color:var(--accent);border-color:var(--accent)">⬆ Update verfügbar</span>
-    <span class="pill" id="syspill" title="Systemstatus"><span class="dot" id="sysdot"></span><span id="systext">Prüfe…</span></span>
-    <button class="btn sm" id="btnSettings">⚙ Einstellungen</button>
+    <span class="pill admin-only" id="updpill" hidden style="color:var(--accent);border-color:var(--accent)">⬆ Update verfügbar</span>
+    <span class="pill admin-only" id="syspill" title="Systemstatus"><span class="dot" id="sysdot"></span><span id="systext">Prüfe…</span></span>
+    <button class="btn sm admin-only" id="btnSettings" title="Einstellungen">⚙<span class="lbl"> Einstellungen</span></button>
+    <div class="userchip" id="userchip"><span class="av" id="uAv">?</span><span id="uName"></span>
+      <div class="menu" id="umenu">
+        <div class="mhead" id="uRole"></div>
+        <button id="mPw">🔑 Passwort ändern</button>
+        <button id="mInstall" hidden>📲 Als App installieren</button>
+        <button id="mLogout">↩ Abmelden</button>
+      </div>
+    </div>
   </header>
 
   <aside>
@@ -266,7 +301,7 @@ pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:
           <div class="sub" style="margin:0;word-break:break-all" id="jSrc"></div>
         </div>
         <div class="row">
-          <button class="btn sm" id="jOpen">📂 Ordner öffnen</button>
+          <button class="btn sm admin-only" id="jOpen" title="Öffnet den Ordner auf dem Server-PC">📂 Ordner öffnen</button>
           <button class="btn sm primary" id="jRetry" hidden>🔁 Erneut versuchen</button>
           <button class="btn sm" id="jRerunBtn">✂️ Neu schneiden</button>
           <button class="btn sm danger" id="jCancel">■ Abbrechen</button>
@@ -327,7 +362,21 @@ pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:
       </div>
       <div class="field" style="margin-top:12px"><label>Claude-Modell</label><input class="input" id="sModel"><div class="hint">Aktuelle Modell-IDs: docs.claude.com → Models</div></div>
     </div>
+    <h2 style="margin-top:18px;font-size:14px">Zugang &amp; Benutzer</h2>
+    <div class="field">
+      <label>Öffentliche Adresse (für Einladungslinks)</label>
+      <input class="input" id="sPublic" placeholder="https://dein-pc.tailxxxx.ts.net  (leer = aktuelle Adresse)">
+      <div class="hint">Die Adresse deines Tunnels (Tailscale Funnel / Cloudflare). Anleitung: README → „Mit anderen teilen“.</div>
+    </div>
+    <div class="actions" style="margin-top:10px"><button class="btn sm" id="invNew">＋ Einladungslink erstellen</button><span class="hint">gilt 7 Tage, einmal verwendbar</span></div>
+    <div class="linkbox" id="invBox" hidden><input class="input" id="invLink" readonly><button class="btn sm" id="invCopy">Kopieren</button></div>
+    <div class="ulist" id="uList"></div>
+    <div class="grid" style="margin-top:12px">
+      <div class="field"><label>Max. Projekte gleichzeitig pro Gast</label><input class="input" type="number" min="1" max="20" id="sMaxJobs"></div>
+      <div class="field"><label>Max. Upload-Größe (GB)</label><input class="input" type="number" min="1" max="200" id="sMaxUp"></div>
+    </div>
     <h2 style="margin-top:18px;font-size:14px">Updates</h2>
+    <div class="toggle" style="padding-top:0"><div class="tl"><b>Updates automatisch installieren</b><span>Prüft alle 3 Stunden auf GitHub und installiert, wenn gerade nichts läuft.</span></div><label class="sw"><input type="checkbox" id="sAutoUpd"><span></span></label></div>
     <div class="field">
       <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
         <span>Version <b id="verNow">–</b></span>
@@ -343,7 +392,33 @@ pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:
       <div class="field"><label>Hashtags für alle Clips</label><input class="input" id="sTags" placeholder="#fyp #clips"></div>
       <div class="field"><label>Schriftart Untertitel</label><input class="input" id="sFont" placeholder="Arial"><div class="hint">Jede installierte Schrift, z.B. „Montserrat Black“.</div></div>
     </div>
+    <h2 style="margin-top:18px;font-size:14px">Server</h2>
+    <div class="actions"><button class="btn sm" id="srvRestart">↻ Neu starten</button><button class="btn sm" id="srvLog">Server-Protokoll anzeigen</button></div>
+    <pre id="srvLogBox" hidden style="margin-top:8px"></pre>
     <div class="actions" style="margin-top:18px"><button class="btn primary" id="sSave">Speichern</button></div>
+  </div>
+</div>
+<!-- AUTH -->
+<div class="authwrap" id="auth" hidden>
+  <form class="authcard" id="authForm" autocomplete="on">
+    <div class="logo"><i></i>Clip Studio</div>
+    <h1 id="aTitle">Anmelden</h1>
+    <p class="sub" id="aSub" style="margin:0"></p>
+    <div class="field"><label>Name</label><input class="input" id="aName" autocomplete="username" required></div>
+    <div class="field"><label>Passwort</label><input class="input" id="aPw" type="password" autocomplete="current-password" required></div>
+    <div class="field" id="aPw2Wrap" hidden><label>Passwort wiederholen</label><input class="input" id="aPw2" type="password" autocomplete="new-password"></div>
+    <button class="btn primary big" id="aBtn" type="submit">Anmelden</button>
+    <div class="autherr" id="aErr"></div>
+  </form>
+</div>
+
+<!-- PASSWORD -->
+<div class="modal" id="pwModal">
+  <div class="card" style="width:min(420px,100%)">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Passwort ändern</h2><button class="btn sm" id="pwClose">✕</button></div>
+    <div class="field" style="margin-top:14px"><label>Aktuelles Passwort</label><input class="input" type="password" id="pwOld" autocomplete="current-password"></div>
+    <div class="field" style="margin-top:12px"><label>Neues Passwort (mind. 8 Zeichen)</label><input class="input" type="password" id="pwNew" autocomplete="new-password"></div>
+    <div class="actions" style="margin-top:16px"><button class="btn primary" id="pwSave">Speichern</button><span class="autherr" id="pwErr" style="margin:0"></span></div>
   </div>
 </div>
 <div class="toast" id="toast"></div>
@@ -359,20 +434,29 @@ const STATUS = {queued:"In Warteschlange", running:"Läuft", done:"Fertig", erro
 const LAYOUT = {track:"Gesicht folgen", split:"Facecam oben", fit:"Ganzes Bild", auto:"Automatisch"};
 
 async function api(path, opts={}) {
-  const o = {...opts};
-  if (o.json !== undefined) { o.body = JSON.stringify(o.json); o.headers = {"Content-Type":"application/json"}; delete o.json; }
+  const o = {...opts, headers: {"X-CS": "1", ...(opts.headers || {})}};
+  if (o.json !== undefined) { o.body = JSON.stringify(o.json); o.headers["Content-Type"] = "application/json"; delete o.json; }
   const r = await fetch(path, o);
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.login) { showAuth("login"); throw new Error("Bitte anmelden"); }
   if (!r.ok) throw new Error(data.error || r.statusText);
   return data;
 }
 function toast(msg) { const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200); }
 
-let state = { jobs: [], current: null, system: {}, file: null, cardKeys: new Set() };
+let state = { jobs: [], current: null, system: {}, file: null, cardKeys: new Set(), me: null };
+const isAdmin = () => state.me && state.me.role === "admin";
 
 /* ---------------- system & settings ---------------- */
 async function loadSystem() {
   const s = state.system = await api("/api/system");
+  $("#file").dataset.maxgb = s.max_upload_gb || 20;
+  if (!isAdmin()) {
+    const ai = $("#ai"); ai.disabled = !s.has_ai; if (!s.has_ai) ai.checked = false;
+    $("#aiHint").innerHTML = s.has_ai ? "Eine KI wählt die stärksten Stellen und schreibt Titel, Caption &amp; Hashtags."
+      : "KI-Auswahl ist auf diesem Server gerade nicht verfügbar – die App nutzt Lautstärke, Reaktionen &amp; Sprechtempo.";
+    return;
+  }
   const missing = [];
   if (!s.ffmpeg) missing.push("ffmpeg"); if (!s.whisper) missing.push("faster-whisper");
   if (!s.ytdlp) missing.push("yt-dlp"); if (!s.opencv_ok) missing.push("OpenCV<5");
@@ -408,6 +492,8 @@ async function openSettings() {
   $("#sKey").value = ""; $("#keyHint").textContent = s.api_key_hint ? `(gespeichert: ${s.api_key_hint})` : "";
   $("#sModel").value = s.ai_model; $("#sTags").value = s.hashtags; $("#sFont").value = s.font;
   $("#sOlModel").value = s.ollama_model; $("#sOlUrl").value = s.ollama_url; setProv(s.ai_provider || "ollama");
+  $("#sPublic").value = s.public_url || ""; $("#sMaxJobs").value = s.max_jobs_per_user; $("#sMaxUp").value = s.max_upload_gb;
+  $("#sAutoUpd").checked = !!s.auto_update; $("#invBox").hidden = true; loadUsers();
   await loadSystem(); pollPull(); checkUpdate(false); $("#modal").classList.add("open");
 }
 $("#btnSettings").onclick = openSettings; $("#syspill").onclick = openSettings;
@@ -459,7 +545,9 @@ $("#updApply").onclick = async () => {
 };
 $("#sSave").onclick = async () => {
   await api("/api/settings", {method:"POST", json:{api_key:$("#sKey").value.trim(), ai_model:$("#sModel").value, hashtags:$("#sTags").value, font:$("#sFont").value,
-    ai_provider:prov, ollama_model:$("#sOlModel").value.trim() || "qwen3:8b", ollama_url:$("#sOlUrl").value.trim() || "http://localhost:11434"}});
+    ai_provider:prov, ollama_model:$("#sOlModel").value.trim() || "qwen3:8b", ollama_url:$("#sOlUrl").value.trim() || "http://localhost:11434",
+    public_url:$("#sPublic").value.trim().replace(/\/+$/, ""), max_jobs_per_user:+$("#sMaxJobs").value || 2, max_upload_gb:+$("#sMaxUp").value || 20,
+    auto_update:$("#sAutoUpd").checked}});
   toast("Gespeichert"); $("#modal").classList.remove("open"); loadSystem();
 };
 
@@ -522,14 +610,32 @@ $("#btnStart").onclick = async () => {
   } catch (e) { toast(e.message); }
   btn.disabled = false;
 };
-function upload(file, params){
-  return new Promise((res, rej) => {
-    const fd = new FormData(); fd.append("file", file); fd.append("params", JSON.stringify(params));
-    const x = new XMLHttpRequest(); x.open("POST", "/api/jobs");
-    x.upload.onprogress = e => { if (e.lengthComputable) $("#uploadInfo").textContent = `Datei wird übernommen… ${Math.round(e.loaded/e.total*100)}%`; };
-    x.onload = () => { const d = JSON.parse(x.responseText||"{}"); x.status<300 ? res(d) : rej(new Error(d.error||"Upload fehlgeschlagen")); };
-    x.onerror = () => rej(new Error("Upload fehlgeschlagen")); x.send(fd);
-  });
+async function upload(file, params){
+  // chunked + resumable: works through tunnels that limit request sizes and survives short disconnects
+  const maxgb = +($("#file").dataset.maxgb || 20);
+  if (file.size > maxgb * 1024**3) throw new Error(`Datei zu groß (max. ${maxgb} GB)`);
+  const info = $("#uploadInfo");
+  const up = await api("/api/uploads", {method:"POST", json:{name:file.name, size:file.size}});
+  let off = 0, fails = 0; const t0 = Date.now();
+  while (off < file.size) {
+    const chunk = file.slice(off, Math.min(off + up.chunk, file.size));
+    try {
+      const r = await fetch(`/api/uploads/${up.id}?offset=${off}`, {method:"PUT", body:chunk, headers:{"X-CS":"1","Content-Type":"application/octet-stream"}});
+      const d = await r.json().catch(() => ({}));
+      if (r.ok || r.status === 409) { off = d.received; fails = 0; }
+      else throw new Error(d.error || r.statusText);
+    } catch (e) {
+      if (++fails > 8) throw new Error("Upload abgebrochen: " + e.message);
+      info.textContent = `Verbindung unterbrochen – neuer Versuch (${fails}/8)…`;
+      await new Promise(r => setTimeout(r, 1500 * fails));
+      try { off = (await api(`/api/uploads/${up.id}`)).received; } catch {}
+      continue;
+    }
+    const mbps = off / 1e6 / Math.max(1, (Date.now() - t0) / 1000);
+    info.textContent = `Hochladen… ${Math.round(off / file.size * 100)}%  (${(off/1e6).toFixed(0)} / ${(file.size/1e6).toFixed(0)} MB, ${mbps.toFixed(1)} MB/s)`;
+  }
+  info.textContent = "Upload fertig – Projekt wird angelegt…";
+  return api(`/api/uploads/${up.id}/finish`, {method:"POST", json:params});
 }
 
 /* ---------------- job list ---------------- */
@@ -539,7 +645,7 @@ async function refreshJobs(){
   if (!state.jobs.length) { el.innerHTML = '<div class="empty">Noch keine Projekte.</div>'; return; }
   el.innerHTML = state.jobs.map(j => `
     <div class="jobitem ${state.current===j.id?"active":""}" data-id="${j.id}">
-      <div class="t" title="${esc(j.title)}">${esc(j.title)}</div>
+      <div class="t" title="${esc(j.title)}">${esc(j.title)}</div>${isAdmin() && j.owner && j.owner !== state.me.name ? `<span class="owner">👤 ${esc(j.owner)}</span>` : ""}
       <div class="s"><span class="dot ${j.status==="done"?"ok":j.status==="error"?"err":j.status==="running"?"warn":""}"></span>
         ${STATUS[j.status]||j.status}${j.clip_count?` · ${j.clip_count} Clips`:""} · ${ago(j.created)}</div>
       ${j.status==="running"||j.status==="queued" ? `<div class="minibar"><b style="width:${j.progress||0}%"></b></div>`:""}
@@ -607,7 +713,7 @@ function clipCard(j, c, i){
       <div class="row">
         <button class="btn sm" data-a="copy">📋 Text kopieren</button>
         <a class="btn sm" href="${v}?download=1" download>⬇ Download</a>
-        <button class="btn sm" data-a="reveal">📂</button>
+        ${isAdmin() ? '<button class="btn sm" data-a="reveal" title="Im Ordner auf dem Server-PC zeigen">📂</button>' : ""}
         <button class="btn sm danger" data-a="del" title="Clip löschen">🗑</button>
       </div>
       <div class="posted" title="Wo hast du den Clip schon gepostet?">
@@ -626,7 +732,8 @@ function bindCard(el, j, c){
     try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand("copy"); }
     toast("Text kopiert – jetzt beim Posten einfügen");
   };
-  el.querySelector('[data-a="reveal"]').onclick = () => api(`/api/jobs/${j.id}/open`, {method:"POST", json:{file:c.file}}).catch(e=>toast(e.message));
+  const rv = el.querySelector('[data-a="reveal"]');
+  if (rv) rv.onclick = () => api(`/api/admin/open/${j.id}`, {method:"POST", json:{file:c.file}}).catch(e=>toast(e.message));
   el.querySelector('[data-a="del"]').onclick = async () => {
     if (!confirm("Diesen Clip löschen?")) return;
     await api(url, {method:"DELETE"}); el.remove(); state.cardKeys.delete(c.file); toast("Clip gelöscht");
@@ -637,7 +744,7 @@ function bindCard(el, j, c){
     await api(url, {method:"POST", json:{posted}});
   });
 }
-$("#jOpen").onclick = () => api(`/api/jobs/${state.current}/open`, {method:"POST", json:{}}).catch(e=>toast(e.message));
+$("#jOpen").onclick = () => api(`/api/admin/open/${state.current}`, {method:"POST", json:{}}).catch(e=>toast(e.message));
 $("#jCancel").onclick = async () => { await api(`/api/jobs/${state.current}/cancel`, {method:"POST"}); toast("Abgebrochen"); renderJob(); };
 $("#jDelete").onclick = async () => {
   if (!confirm("Projekt inklusive aller Clips löschen?")) return;
@@ -658,6 +765,7 @@ $("#rGo").onclick = async () => {
 
 /* ---------------- polling ---------------- */
 async function tick(){
+  if (!state.me) return setTimeout(tick, 1500);
   try {
     await refreshJobs();
     const cur = state.jobs.find(j => j.id === state.current);
@@ -665,7 +773,103 @@ async function tick(){
   } catch {}
   setTimeout(tick, 1500);
 }
-loadSystem(); checkUpdate(false); refreshJobs().then(() => { if (state.jobs[0] && ["running","queued"].includes(state.jobs[0].status)) showJob(state.jobs[0].id); });
+/* ---------------- accounts ---------------- */
+let authMode = "login", inviteCode = (location.hash.match(/invite=([\w-]+)/) || [])[1] || "";
+function showAuth(mode){
+  authMode = mode; state.me = null;
+  const T = {
+    setup: ["Willkommen!", "Lege dein Admin-Konto an. Damit verwaltest du Clip Studio und lädst andere ein.", "Konto erstellen"],
+    login: ["Anmelden", "", "Anmelden"],
+    register: ["Einladung annehmen", "Du wurdest zu Clip Studio eingeladen. Wähle einen Namen und ein Passwort.", "Konto erstellen"],
+  }[mode];
+  $("#aTitle").textContent = T[0]; $("#aSub").textContent = T[1]; $("#aBtn").textContent = T[2];
+  $("#aPw2Wrap").hidden = mode === "login"; $("#aPw").autocomplete = mode === "login" ? "current-password" : "new-password";
+  $("#aErr").textContent = ""; $("#auth").hidden = false; setTimeout(() => $("#aName").focus(), 50);
+}
+$("#authForm").onsubmit = async e => {
+  e.preventDefault();
+  const name = $("#aName").value.trim(), password = $("#aPw").value;
+  if (authMode !== "login" && password !== $("#aPw2").value) return $("#aErr").textContent = "Passwörter stimmen nicht überein";
+  const path = {setup:"/api/setup", login:"/api/login", register:"/api/register"}[authMode];
+  $("#aBtn").disabled = true;
+  try {
+    const r = await api(path, {method:"POST", json:{name, password, code: inviteCode}});
+    if (authMode === "register") history.replaceState(null, "", location.pathname);
+    $("#aPw").value = $("#aPw2").value = "";
+    startApp(r.user);
+  } catch (err) { $("#aErr").textContent = err.message; }
+  $("#aBtn").disabled = false;
+};
+function startApp(user){
+  state.me = user; $("#auth").hidden = true;
+  $("#uName").textContent = user.name; $("#uAv").textContent = user.name[0].toUpperCase();
+  $("#uRole").textContent = user.role === "admin" ? "Admin · " + user.name : "Gast · " + user.name;
+  document.body.classList.toggle("is-admin", isAdmin());
+  $("#src").placeholder = isAdmin() ? "https://www.twitch.tv/videos/…  ·  YouTube  ·  Kick  ·  oder Dateipfad auf diesem PC"
+                                    : "https://www.twitch.tv/videos/…  ·  YouTube  ·  Kick";
+  loadSystem().catch(() => {});
+  if (isAdmin()) checkUpdate(false);
+  refreshJobs().then(() => { if (state.jobs[0] && ["running","queued"].includes(state.jobs[0].status)) showJob(state.jobs[0].id); else showNew(); });
+}
+$("#userchip").onclick = e => { e.stopPropagation(); $("#umenu").classList.toggle("open"); };
+document.addEventListener("click", () => $("#umenu").classList.remove("open"));
+$("#mLogout").onclick = async () => { await api("/api/logout", {method:"POST"}).catch(() => {}); location.reload(); };
+$("#mPw").onclick = () => { $("#pwOld").value = $("#pwNew").value = ""; $("#pwErr").textContent = ""; $("#pwModal").classList.add("open"); };
+$("#pwClose").onclick = () => $("#pwModal").classList.remove("open");
+$("#pwSave").onclick = async () => {
+  try { await api("/api/me/password", {method:"POST", json:{old:$("#pwOld").value, new:$("#pwNew").value}});
+        $("#pwModal").classList.remove("open"); toast("Passwort geändert"); }
+  catch (e) { $("#pwErr").textContent = e.message; }
+};
+
+/* admin: users + invites */
+async function loadUsers(){
+  const d = await api("/api/admin/users");
+  const rows = d.users.map(u => `<div><span>${u.role === "admin" ? "👑" : "👤"} <b>${esc(u.name)}</b>
+      <span class="sub" style="margin:0">${u.last_login ? "zuletzt " + ago(u.last_login) : "noch nie angemeldet"}</span></span>
+      ${u.name === state.me.name ? '<span class="sub" style="margin:0">du</span>' :
+        `<span class="row"><button class="btn sm" data-reset="${esc(u.name)}">Passwort</button><button class="btn sm danger" data-del="${esc(u.name)}">Entfernen</button></span>`}</div>`);
+  const invs = d.invites.map(i => `<div><span>✉️ Einladung <span class="sub" style="margin:0">läuft ab ${new Date(i.expires*1000).toLocaleDateString("de-DE")}</span></span>
+      <span class="row"><button class="btn sm" data-copy="${esc(i.code)}">Link kopieren</button><button class="btn sm danger" data-drop="${esc(i.code)}">Löschen</button></span></div>`);
+  $("#uList").innerHTML = rows.concat(invs).join("");
+  $("#uList").querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
+    if (!confirm(`${b.dataset.del} entfernen? Seine Projekte bleiben erhalten.`)) return;
+    await api(`/api/admin/users/${encodeURIComponent(b.dataset.del)}`, {method:"DELETE"}); loadUsers(); });
+  $("#uList").querySelectorAll("[data-reset]").forEach(b => b.onclick = async () => {
+    const pw = prompt(`Neues Passwort für ${b.dataset.reset} (mind. 8 Zeichen):`); if (!pw) return;
+    try { await api(`/api/admin/users/${encodeURIComponent(b.dataset.reset)}/password`, {method:"POST", json:{password:pw}}); toast("Passwort gesetzt"); }
+    catch (e) { toast(e.message); } });
+  $("#uList").querySelectorAll("[data-drop]").forEach(b => b.onclick = async () => {
+    await api(`/api/admin/invites/${encodeURIComponent(b.dataset.drop)}`, {method:"DELETE"}); loadUsers(); });
+  $("#uList").querySelectorAll("[data-copy]").forEach(b => b.onclick = () => copyText(inviteLink(b.dataset.copy)));
+}
+function inviteLink(code){ const base = ($("#sPublic").value.trim() || location.origin).replace(/\/+$/, ""); return `${base}/#invite=${code}`; }
+async function copyText(t){ try { await navigator.clipboard.writeText(t); } catch { const i = $("#invLink"); i.value = t; i.select(); document.execCommand("copy"); } toast("Link kopiert – schick ihn an die Person"); }
+$("#invNew").onclick = async () => {
+  const r = await api("/api/admin/invites", {method:"POST", json:{}});
+  $("#invLink").value = inviteLink(r.code); $("#invBox").hidden = false; loadUsers();
+};
+$("#invCopy").onclick = () => copyText($("#invLink").value);
+$("#srvRestart").onclick = async () => {
+  try { await api("/api/admin/restart", {method:"POST"}); } catch (e) { return toast(e.message); }
+  toast("Server startet neu…"); setTimeout(function wait(){ api("/api/ping").then(() => location.reload()).catch(() => setTimeout(wait, 2000)); }, 3000);
+};
+$("#srvLog").onclick = async () => { const d = await api("/api/admin/log"); const b = $("#srvLogBox");
+  b.hidden = false; b.textContent = d.log.join("\n") || "(noch leer – im Vordergrund-Modus steht alles im schwarzen Fenster)"; b.scrollTop = b.scrollHeight; };
+
+/* installable app (PWA) */
+if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
+let installEvt = null;
+addEventListener("beforeinstallprompt", e => { e.preventDefault(); installEvt = e; $("#mInstall").hidden = false; });
+$("#mInstall").onclick = async () => { if (!installEvt) return; installEvt.prompt(); await installEvt.userChoice; installEvt = null; $("#mInstall").hidden = true; };
+
+/* boot */
+(async () => {
+  const me = await api("/api/me").catch(() => ({user:null, setup:false}));
+  if (me.user) startApp(me.user);
+  else if (me.setup) showAuth("setup");
+  else showAuth(inviteCode ? "register" : "login");
+})();
 tick();
 </script>
 </body>

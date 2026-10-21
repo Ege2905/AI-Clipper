@@ -1,0 +1,6 @@
+flask>=3.0
+faster-whisper>=1.0
+yt-dlp[default]            # includes YouTube JS challenge solver (needs deno)
+numpy
+opencv-python-headless<5   # OpenCV 5 removed the built-in face detector
+anthropic                  # only needed for the AI mode

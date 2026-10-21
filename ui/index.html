@@ -1,0 +1,672 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clip Studio</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%237c5cff'/%3E%3Cpath d='M12 9l11 7-11 7z' fill='white'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0e0f13; --panel:#16181f; --panel2:#1d2029; --line:#2a2e3a; --text:#eceef4; --muted:#9097a8;
+  --accent:#7c5cff; --accent2:#ff4f9a; --ok:#2fcf87; --warn:#ffb547; --err:#ff5d6c;
+  --radius:14px; --shadow:0 10px 30px rgba(0,0,0,.35);
+  color-scheme:dark;
+}
+@media (prefers-color-scheme: light){
+  :root:not([data-theme="dark"]){
+    --bg:#f4f5f8; --panel:#ffffff; --panel2:#f0f1f5; --line:#e2e4ea; --text:#171923; --muted:#636a7b;
+    --shadow:0 10px 30px rgba(20,20,40,.08); color-scheme:light;
+  }
+}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+html,body{margin:0;height:100%}
+body{background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--accent)}
+.app{display:grid;grid-template-columns:280px 1fr;grid-template-rows:56px 1fr;height:100vh}
+header{grid-column:1/3;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:var(--panel)}
+.logo{display:flex;align-items:center;gap:10px;font-weight:700;font-size:16px;letter-spacing:.2px}
+.logo i{width:28px;height:28px;border-radius:8px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center}
+.logo i:after{content:"";border-left:10px solid #fff;border-top:6px solid transparent;border-bottom:6px solid transparent;margin-left:3px}
+.spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:4px 10px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);font-size:12px;color:var(--muted);cursor:pointer}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--muted)}
+.dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.err{background:var(--err)}
+aside{border-right:1px solid var(--line);background:var(--panel);overflow:auto;padding:14px;display:flex;flex-direction:column;gap:10px}
+main{overflow:auto;padding:26px clamp(16px,3vw,40px) 60px}
+.btn{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid var(--line);background:var(--panel2);padding:8px 14px;border-radius:10px;cursor:pointer;white-space:nowrap;text-decoration:none;color:var(--text)}
+.btn:hover{border-color:var(--muted)}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#9a6bff);border:0;color:#fff;font-weight:600}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.big{padding:12px 22px;font-size:15px;border-radius:12px}
+.btn.danger:hover{border-color:var(--err);color:var(--err)}
+.btn.sm{padding:5px 10px;font-size:12.5px;border-radius:8px}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+.joblist{display:flex;flex-direction:column;gap:6px}
+.jobitem{padding:10px 12px;border-radius:10px;border:1px solid transparent;cursor:pointer}
+.jobitem:hover{background:var(--panel2)}
+.jobitem.active{background:var(--panel2);border-color:var(--line)}
+.jobitem .t{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.jobitem .s{font-size:12px;color:var(--muted);display:flex;gap:6px;align-items:center;margin-top:3px}
+.minibar{height:3px;background:var(--line);border-radius:3px;margin-top:7px;overflow:hidden}
+.minibar b{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2))}
+.sidehead{font-size:11px;text-transform:uppercase;letter-spacing:.08em;color:var(--muted);margin:8px 2px 0}
+.empty{color:var(--muted);font-size:13px;padding:6px 2px}
+h1{font-size:24px;margin:0 0 4px} h2{font-size:16px;margin:0 0 12px}
+.sub{color:var(--muted);margin:0 0 22px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:20px;margin-bottom:16px}
+.wrap{max-width:900px}
+.wide{max-width:1400px}
+.srcrow{display:flex;gap:10px}
+.input,select,textarea{width:100%;background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:9px 12px;outline:none}
+.input:focus,select:focus,textarea:focus{border-color:var(--accent)}
+.input.huge{font-size:16px;padding:13px 16px}
+.drop{margin-top:12px;border:1.5px dashed var(--line);border-radius:12px;padding:18px;text-align:center;color:var(--muted);cursor:pointer;transition:.15s}
+.drop.over,.drop:hover{border-color:var(--accent);color:var(--text);background:color-mix(in srgb,var(--accent) 7%,transparent)}
+.drop.has{border-style:solid;border-color:var(--ok);color:var(--text)}
+.presets{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:18px}
+.chip{border:1px solid var(--line);background:var(--panel2);border-radius:99px;padding:7px 14px;cursor:pointer;font-size:13px}
+.chip.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 16%,transparent)}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px}
+.field label{display:block;font-size:12.5px;color:var(--muted);margin-bottom:6px}
+.field .hint{font-size:12px;color:var(--muted);margin-top:5px}
+.range{display:flex;align-items:center;gap:10px}
+.range input[type=range]{flex:1;accent-color:var(--accent)}
+.range output{min-width:28px;text-align:right;font-weight:600}
+.pair{display:flex;gap:8px;align-items:center}
+.seg{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.seg button{border:1px solid var(--line);background:var(--panel2);border-radius:10px;padding:10px 6px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:6px;font-size:12.5px}
+.seg button.on{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 14%,transparent)}
+.seg svg{width:26px;height:40px}
+.toggle{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0}
+.toggle .tl > b{display:block;font-weight:600} .toggle .tl span{font-size:12.5px;color:var(--muted)}
+.sw{position:relative;width:42px;height:24px;flex:none}
+.sw input{opacity:0;width:0;height:0}
+.sw span{position:absolute;inset:0;background:var(--line);border-radius:99px;transition:.15s;cursor:pointer}
+.sw span:after{content:"";position:absolute;left:3px;top:3px;width:18px;height:18px;border-radius:50%;background:#fff;transition:.15s}
+.sw input:checked+span{background:var(--accent)} .sw input:checked+span:after{transform:translateX(18px)}
+.sw input:disabled+span{opacity:.4;cursor:not-allowed}
+details.adv{margin-top:6px} details.adv summary{cursor:pointer;color:var(--muted);padding:8px 0}
+.note{font-size:12.5px;color:var(--muted);display:flex;gap:8px;align-items:flex-start;margin-top:14px}
+.actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px}
+.jobhead{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;flex-wrap:wrap;margin-bottom:16px}
+.jobhead h1{word-break:break-word}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:12px;padding:3px 9px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);color:var(--muted)}
+.badge.running{color:var(--accent);border-color:color-mix(in srgb,var(--accent) 50%,transparent)}
+.badge.done{color:var(--ok);border-color:color-mix(in srgb,var(--ok) 45%,transparent)}
+.badge.error{color:var(--err);border-color:color-mix(in srgb,var(--err) 45%,transparent)}
+.progress{height:10px;background:var(--panel2);border-radius:99px;overflow:hidden;border:1px solid var(--line)}
+.progress b{display:block;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));transition:width .6s}
+.progress.anim b{background-size:200% 100%;animation:sh 1.6s linear infinite;background-image:linear-gradient(90deg,var(--accent),var(--accent2),var(--accent))}
+@keyframes sh{to{background-position:-200% 0}}
+.stage{display:flex;justify-content:space-between;color:var(--muted);font-size:13px;margin-top:8px}
+.errbox{background:color-mix(in srgb,var(--err) 10%,transparent);border:1px solid color-mix(in srgb,var(--err) 40%,transparent);color:var(--text);padding:12px 14px;border-radius:10px;margin-top:12px}
+.warnbox{background:color-mix(in srgb,var(--warn) 10%,transparent);border:1px solid color-mix(in srgb,var(--warn) 40%,transparent);padding:10px 14px;border-radius:10px;margin-top:12px;font-size:13px}
+.clips{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:18px}
+.clip{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);overflow:hidden;display:flex;flex-direction:column}
+.clip video{width:100%;aspect-ratio:9/16;background:#000;display:block;object-fit:contain}
+.clip .body{padding:12px;display:flex;flex-direction:column;gap:10px;flex:1}
+.meta{display:flex;flex-wrap:wrap;gap:6px;font-size:12px;color:var(--muted)}
+.meta span{background:var(--panel2);border-radius:6px;padding:2px 7px}
+.meta .score{color:var(--warn)}
+.clip textarea{min-height:96px;resize:vertical;font-size:13px}
+.saved{font-size:11.5px;color:var(--ok);height:14px}
+.row{display:flex;gap:6px;flex-wrap:wrap}
+.posted{display:flex;gap:6px}
+.posted button{flex:1;border:1px solid var(--line);background:var(--panel2);border-radius:8px;padding:6px 4px;font-size:12px;cursor:pointer;color:var(--muted)}
+.posted button.on{color:#fff;border-color:transparent}
+.posted button.on.yt{background:#e33}.posted button.on.ig{background:linear-gradient(45deg,#f9a825,#e91e63,#8e24aa)}.posted button.on.tt{background:#111;box-shadow:inset 2px 0 #25f4ee,inset -2px 0 #fe2c55}
+.placeholder{aspect-ratio:9/16;display:grid;place-items:center;background:var(--panel2);color:var(--muted);font-size:13px}
+details.log summary{cursor:pointer;color:var(--muted)}
+pre{background:#0a0b0e;color:#c9cfdb;border-radius:10px;padding:12px;max-height:320px;overflow:auto;font-size:12px;white-space:pre-wrap;word-break:break-word}
+.modal{position:fixed;inset:0;background:rgba(0,0,0,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:10}
+.modal.open{display:flex}
+.modal .card{width:min(620px,100%);max-height:90vh;overflow:auto;box-shadow:var(--shadow);margin:0}
+.checks{display:grid;gap:6px;margin:6px 0 4px}
+.checks div{display:flex;gap:8px;align-items:center;font-size:13px}
+.toast{position:fixed;bottom:20px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--text);color:var(--bg);padding:10px 16px;border-radius:10px;opacity:0;transition:.2s;pointer-events:none;z-index:20;font-weight:500}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.rerun{display:none;margin-top:14px}
+.rerun.open{display:block}
+.welcome{display:flex;gap:14px;align-items:center;margin-bottom:6px}
+.kbd{font-family:ui-monospace,monospace;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12px}
+@media (max-width:820px){
+  .app{grid-template-columns:1fr;grid-template-rows:56px auto 1fr}
+  header{grid-column:1}
+  aside{max-height:180px;border-right:0;border-bottom:1px solid var(--line)}
+  .seg{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="logo"><i></i>Clip Studio</div>
+    <div class="spacer"></div>
+    <span class="pill" id="updpill" hidden style="color:var(--accent);border-color:var(--accent)">⬆ Update verfügbar</span>
+    <span class="pill" id="syspill" title="Systemstatus"><span class="dot" id="sysdot"></span><span id="systext">Prüfe…</span></span>
+    <button class="btn sm" id="btnSettings">⚙ Einstellungen</button>
+  </header>
+
+  <aside>
+    <button class="btn primary" id="btnNew">＋ Neues Projekt</button>
+    <div class="sidehead">Projekte</div>
+    <div class="joblist" id="joblist"><div class="empty">Noch keine Projekte.</div></div>
+  </aside>
+
+  <main id="main">
+    <!-- NEW PROJECT -->
+    <section id="viewNew" class="wrap">
+      <h1>Neues Projekt</h1>
+      <p class="sub">Link zu einem Stream, Podcast oder Video einfügen – Clip Studio findet die besten Momente und macht daraus fertige Shorts.</p>
+
+      <div class="card">
+        <h2>1 · Quelle</h2>
+        <input class="input huge" id="src" placeholder="https://www.twitch.tv/videos/…  ·  YouTube  ·  Kick  ·  oder Dateipfad" autocomplete="off">
+        <div class="drop" id="drop">
+          <input type="file" id="file" accept="video/*,.mkv,.mov,.mp4,.webm" hidden>
+          <span id="dropText">…oder Videodatei hierher ziehen / klicken zum Auswählen</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>2 · Art des Videos</h2>
+        <div class="presets" id="presets">
+          <button class="chip on" data-p="stream">🎮 Gaming-Stream</button>
+          <button class="chip" data-p="chat">💬 Just Chatting / IRL</button>
+          <button class="chip" data-p="podcast">🎙 Podcast / Interview</button>
+          <button class="chip" data-p="custom">⚙ Eigene Einstellungen</button>
+        </div>
+
+        <div class="grid">
+          <div class="field">
+            <label>Anzahl Clips</label>
+            <div class="range"><input type="range" id="num" min="1" max="20" value="6"><output id="numOut">6</output></div>
+          </div>
+          <div class="field">
+            <label>Länge pro Clip (Sekunden)</label>
+            <div class="pair"><input class="input" type="number" id="min" value="20" min="5" max="170"> <span>bis</span> <input class="input" type="number" id="max" value="45" min="10" max="180"></div>
+          </div>
+          <div class="field">
+            <label>Sprache</label>
+            <select id="lang">
+              <option value="">Automatisch erkennen</option>
+              <option value="de">Deutsch</option><option value="en">Englisch</option>
+              <option value="tr">Türkisch</option><option value="es">Spanisch</option>
+              <option value="fr">Französisch</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="field" style="margin-top:18px">
+          <label>Bildaufteilung (9:16)</label>
+          <div class="seg" id="layout">
+            <button data-v="auto" class="on"><svg viewBox="0 0 26 40"><rect x="1" y="1" width="24" height="38" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><text x="13" y="25" font-size="12" text-anchor="middle" fill="currentColor">A</text></svg>Automatisch</button>
+            <button data-v="track"><svg viewBox="0 0 26 40"><rect x="1" y="1" width="24" height="38" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="15" r="5" fill="currentColor"/><path d="M4 33c2-8 16-8 18 0" fill="currentColor"/></svg>Gesicht folgen</button>
+            <button data-v="split"><svg viewBox="0 0 26 40"><rect x="1" y="1" width="24" height="38" rx="3" fill="none" stroke="currentColor" stroke-width="1.5"/><line x1="1" y1="15" x2="25" y2="15" stroke="currentColor" stroke-width="1.5"/><circle cx="13" cy="8" r="3.5" fill="currentColor"/><path d="M6 33l5-8 4 5 3-3 3 6z" fill="currentColor"/></svg>Facecam oben</button>
+            <button data-v="fit"><svg viewBox="0 0 26 40"><rect x="1" y="1" width="24" height="38" rx="3" fill="currentColor" opacity=".25"/><rect x="1" y="14" width="24" height="12" fill="currentColor" opacity=".9"/></svg>Ganzes Bild</button>
+          </div>
+        </div>
+
+        <div class="toggle" style="margin-top:12px;border-top:1px solid var(--line);padding-top:14px">
+          <div class="tl"><b>✨ KI wählt die Momente</b><span id="aiHint">KI-Verfügbarkeit wird geprüft…</span></div>
+          <label class="sw"><input type="checkbox" id="ai"><span></span></label>
+        </div>
+
+        <details class="adv">
+          <summary>Erweiterte Einstellungen</summary>
+          <div class="grid" style="margin-top:10px">
+            <div class="field">
+              <label>Nur Abschnitt verarbeiten (optional)</label>
+              <input class="input" id="section" placeholder="z.B. 1:00:00-2:30:00">
+              <div class="hint">Spart bei langen VODs viel Zeit.</div>
+            </div>
+            <div class="field">
+              <label>Genauigkeit der Spracherkennung</label>
+              <select id="whisper">
+                <option value="base">Schnell (base)</option>
+                <option value="small" selected>Ausgewogen (small)</option>
+                <option value="medium">Genau (medium)</option>
+                <option value="large-v3">Sehr genau (large-v3, langsam)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Facecam-Position (für „Facecam oben“)</label>
+              <input class="input" id="facecam" placeholder="x,y,breite,höhe  z.B. 0.80,0.02,0.18,0.25">
+              <div class="hint">Anteile des Bildes (0–1). Leer = automatisch erkennen.</div>
+            </div>
+            <div class="field">
+              <label>Zusätzliche Hashtags</label>
+              <input class="input" id="hashtags" placeholder="#twitch #streamer">
+            </div>
+            <div class="field">
+              <label>Wörter pro Untertitel-Zeile</label>
+              <select id="wpl"><option>1</option><option>2</option><option selected>3</option><option>4</option></select>
+            </div>
+          </div>
+          <div class="toggle"><div class="tl"><b>Untertitel in GROSSBUCHSTABEN</b></div><label class="sw"><input type="checkbox" id="upper" checked><span></span></label></div>
+          <div class="toggle"><div class="tl"><b>Titel am Anfang einblenden</b><span>Hook-Text für die ersten 3 Sekunden</span></div><label class="sw"><input type="checkbox" id="titleov" checked><span></span></label></div>
+        </details>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary big" id="btnStart">▶ Clips erstellen</button>
+        <span id="uploadInfo" class="sub" style="margin:0"></span>
+      </div>
+      <div class="note">⚖️ <span>Clippe nur Inhalte, für die du die Erlaubnis hast – eigene Videos, Creator die Clipping erlauben, oder bezahlte Clipping-Kampagnen. Sonst drohen Copyright-Strikes.</span></div>
+    </section>
+
+    <!-- JOB DETAIL -->
+    <section id="viewJob" class="wide" hidden>
+      <div class="jobhead">
+        <div style="min-width:0;flex:1">
+          <div style="display:flex;gap:8px;align-items:center;margin-bottom:6px"><span class="badge" id="jBadge"></span><span class="sub" style="margin:0" id="jWhen"></span></div>
+          <h1 id="jTitle"></h1>
+          <div class="sub" style="margin:0;word-break:break-all" id="jSrc"></div>
+        </div>
+        <div class="row">
+          <button class="btn sm" id="jOpen">📂 Ordner öffnen</button>
+          <button class="btn sm primary" id="jRetry" hidden>🔁 Erneut versuchen</button>
+          <button class="btn sm" id="jRerunBtn">✂️ Neu schneiden</button>
+          <button class="btn sm danger" id="jCancel">■ Abbrechen</button>
+          <button class="btn sm danger" id="jDelete">🗑 Löschen</button>
+        </div>
+      </div>
+
+      <div class="card" id="jProgressCard">
+        <div class="progress" id="jBarWrap"><b id="jBar" style="width:0"></b></div>
+        <div class="stage"><span id="jStage"></span><span id="jPct"></span></div>
+        <div class="errbox" id="jErr" hidden></div>
+        <div class="warnbox" id="jWarn" hidden></div>
+        <div class="rerun" id="jRerun">
+          <div class="grid">
+            <div class="field"><label>Anzahl Clips</label><input class="input" type="number" id="rNum" min="1" max="20"></div>
+            <div class="field"><label>Länge min / max</label><div class="pair"><input class="input" type="number" id="rMin"><input class="input" type="number" id="rMax"></div></div>
+            <div class="field"><label>Bildaufteilung</label><select id="rLayout"><option value="auto">Automatisch</option><option value="track">Gesicht folgen</option><option value="split">Facecam oben</option><option value="fit">Ganzes Bild</option></select></div>
+            <div class="field"><label>KI-Auswahl</label><select id="rAi"><option value="0">Aus</option><option value="1">An</option></select></div>
+          </div>
+          <div class="actions" style="margin-top:12px"><button class="btn primary" id="rGo">Neu schneiden</button><span class="sub" style="margin:0">Download &amp; Transkript werden wiederverwendet – geht schnell.</span></div>
+        </div>
+      </div>
+
+      <div class="clips" id="jClips"></div>
+
+      <details class="log card" style="margin-top:18px"><summary>Protokoll anzeigen</summary><pre id="jLog"></pre></details>
+    </section>
+  </main>
+</div>
+
+<!-- SETTINGS -->
+<div class="modal" id="modal">
+  <div class="card">
+    <div style="display:flex;justify-content:space-between;align-items:center"><h2 style="margin:0">Einstellungen</h2><button class="btn sm" id="mClose">✕</button></div>
+    <h2 style="margin-top:18px;font-size:14px">System</h2>
+    <div class="checks" id="checks"></div>
+    <h2 style="margin-top:18px;font-size:14px">KI für die Moment-Auswahl (optional)</h2>
+    <div class="seg" id="prov" style="grid-template-columns:1fr 1fr;margin-bottom:12px">
+      <button data-v="ollama">🖥 Lokal (Ollama)<span class="sub" style="margin:0;font-size:11.5px">kostenlos · offline · privat</span></button>
+      <button data-v="anthropic">☁️ Claude API<span class="sub" style="margin:0;font-size:11.5px">beste Qualität · kostet Cent-Beträge</span></button>
+    </div>
+    <div id="provOllama">
+      <div class="checks" id="olChecks"></div>
+      <div class="grid" style="margin-top:10px">
+        <div class="field"><label>Lokales Modell</label>
+          <input class="input" id="sOlModel" list="olModels" placeholder="qwen3:8b"><datalist id="olModels"></datalist>
+          <div class="hint">8 GB Grafikkarte/RAM: <span class="kbd">qwen3:8b</span> · mehr Power: <span class="kbd">qwen3:14b</span> · schwacher PC: <span class="kbd">qwen3:4b</span></div>
+        </div>
+        <div class="field"><label>Ollama-Adresse</label><input class="input" id="sOlUrl" placeholder="http://localhost:11434"></div>
+      </div>
+      <div class="actions" style="margin-top:8px"><button class="btn sm" id="olPull">⬇ Modell herunterladen</button><span class="sub" style="margin:0" id="olPullInfo"></span></div>
+      <div class="progress" id="olBarWrap" style="margin-top:8px" hidden><b id="olBar" style="width:0"></b></div>
+    </div>
+    <div id="provAnthropic" hidden>
+      <div class="field"><label>Anthropic API-Key <span id="keyHint"></span></label>
+        <input class="input" type="password" id="sKey" placeholder="sk-ant-…  (leer lassen = unverändert)" autocomplete="off">
+        <div class="hint">Bekommst du auf <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a>. Wird nur lokal in settings.json gespeichert. <a href="#" id="sKeyClear">Key entfernen</a></div>
+      </div>
+      <div class="field" style="margin-top:12px"><label>Claude-Modell</label><input class="input" id="sModel"><div class="hint">Aktuelle Modell-IDs: docs.claude.com → Models</div></div>
+    </div>
+    <h2 style="margin-top:18px;font-size:14px">Updates</h2>
+    <div class="field">
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <span>Version <b id="verNow">–</b></span>
+        <button class="btn sm" id="updCheck">Nach Updates suchen</button>
+        <button class="btn sm primary" id="updApply" hidden>Jetzt installieren</button>
+      </div>
+      <div class="hint" id="updInfo"></div>
+      <pre id="updNotes" hidden style="max-height:160px;margin-top:8px"></pre>
+      <div class="hint">Projekte, Clips und Einstellungen bleiben beim Update erhalten.</div>
+    </div>
+    <h2 style="margin-top:18px;font-size:14px">Standards</h2>
+    <div class="grid">
+      <div class="field"><label>Hashtags für alle Clips</label><input class="input" id="sTags" placeholder="#fyp #clips"></div>
+      <div class="field"><label>Schriftart Untertitel</label><input class="input" id="sFont" placeholder="Arial"><div class="hint">Jede installierte Schrift, z.B. „Montserrat Black“.</div></div>
+    </div>
+    <div class="actions" style="margin-top:18px"><button class="btn primary" id="sSave">Speichern</button></div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const fmt = s => { s = Math.max(0, Math.round(s||0)); const h=Math.floor(s/3600), m=Math.floor(s%3600/60), x=s%60;
+  return h ? `${h}:${String(m).padStart(2,"0")}:${String(x).padStart(2,"0")}` : `${m}:${String(x).padStart(2,"0")}`; };
+const ago = t => { const d=(Date.now()/1000-t); if(d<60) return "gerade eben"; if(d<3600) return `vor ${Math.floor(d/60)} Min.`;
+  if(d<86400) return `vor ${Math.floor(d/3600)} Std.`; return new Date(t*1000).toLocaleDateString("de-DE"); };
+const STATUS = {queued:"In Warteschlange", running:"Läuft", done:"Fertig", error:"Fehler", cancelled:"Abgebrochen"};
+const LAYOUT = {track:"Gesicht folgen", split:"Facecam oben", fit:"Ganzes Bild", auto:"Automatisch"};
+
+async function api(path, opts={}) {
+  const o = {...opts};
+  if (o.json !== undefined) { o.body = JSON.stringify(o.json); o.headers = {"Content-Type":"application/json"}; delete o.json; }
+  const r = await fetch(path, o);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || r.statusText);
+  return data;
+}
+function toast(msg) { const t=$("#toast"); t.textContent=msg; t.classList.add("show"); clearTimeout(t._h); t._h=setTimeout(()=>t.classList.remove("show"),2200); }
+
+let state = { jobs: [], current: null, system: {}, file: null, cardKeys: new Set() };
+
+/* ---------------- system & settings ---------------- */
+async function loadSystem() {
+  const s = state.system = await api("/api/system");
+  const missing = [];
+  if (!s.ffmpeg) missing.push("ffmpeg"); if (!s.whisper) missing.push("faster-whisper");
+  if (!s.ytdlp) missing.push("yt-dlp"); if (!s.opencv_ok) missing.push("OpenCV<5");
+  $("#sysdot").className = "dot " + (missing.length ? "err" : "ok");
+  $("#systext").textContent = missing.length ? "Fehlt: " + missing.join(", ") : "Bereit";
+  const ai = $("#ai");
+  ai.disabled = !s.has_ai;
+  const local = s.provider !== "anthropic";
+  $("#aiHint").innerHTML = s.has_ai
+    ? (local ? `Ein lokales KI-Modell (<b>${esc(s.ollama_model)}</b>) liest das Transkript und wählt die stärksten Stellen – inkl. Titel, Caption &amp; Hashtags. Kostenlos, läuft auf deinem PC.`
+             : "Claude liest das Transkript, findet die stärksten Stellen und schreibt Titel, Caption &amp; Hashtags.")
+    : (local ? (!s.ollama.running ? 'Lokale KI: Ollama ist nicht gestartet bzw. nicht installiert – <a href="#" onclick="openSettings();return false">Anleitung in den Einstellungen</a>.'
+                                  : `Lokale KI: Modell <b>${esc(s.ollama_model)}</b> fehlt noch – <a href="#" onclick="openSettings();return false">in den Einstellungen herunterladen</a>.`)
+             : 'Braucht einen Anthropic API-Key – <a href="#" onclick="openSettings();return false">in den Einstellungen eintragen</a>.')
+      + " Ohne KI nutzt die App Lautstärke, Reaktionen &amp; Sprechtempo.";
+  if (!s.has_ai) ai.checked = false;
+  const ok = (v, label, fix) => `<div>${v?"✅":"❌"} ${label}${v?"":` <span class="sub" style="margin:0">– ${fix}</span>`}</div>`;
+  $("#olChecks").innerHTML =
+    ok(s.ollama.running, "Ollama läuft", 'installieren von <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a> und die App starten (läuft dann im Hintergrund)') +
+    (s.ollama.running ? ok(s.ollama_model_ok, `Modell ${esc(s.ollama_model)} installiert`, 'unten auf „Modell herunterladen“ klicken') : "");
+  $("#olModels").innerHTML = s.ollama.models.map(m => `<option value="${esc(m)}">`).join("");
+  $("#olPull").disabled = !s.ollama.running;
+  const c = (ok, label, fix) => `<div>${ok?"✅":"❌"} ${label}${ok?"":` <span class="sub" style="margin:0">– ${fix}</span>`}</div>`;
+  $("#checks").innerHTML =
+    c(s.ffmpeg, "ffmpeg", s.os==="Windows" ? 'im Terminal: <span class="kbd">winget install Gyan.FFmpeg</span>, dann App neu starten' : '<span class="kbd">brew install ffmpeg</span>') +
+    c(s.whisper, "Spracherkennung (faster-whisper)", '<span class="kbd">pip install -r requirements.txt</span>') +
+    c(s.ytdlp, "Downloader (yt-dlp)", '<span class="kbd">pip install yt-dlp</span>') +
+    c(s.opencv_ok, "Gesichtserkennung (OpenCV 4)", '<span class="kbd">pip install "opencv-python-headless<5"</span>') +
+    c(s.anthropic, "Anthropic-Paket (nur für KI)", '<span class="kbd">pip install anthropic</span>');
+}
+async function openSettings() {
+  const s = await api("/api/settings");
+  $("#sKey").value = ""; $("#keyHint").textContent = s.api_key_hint ? `(gespeichert: ${s.api_key_hint})` : "";
+  $("#sModel").value = s.ai_model; $("#sTags").value = s.hashtags; $("#sFont").value = s.font;
+  $("#sOlModel").value = s.ollama_model; $("#sOlUrl").value = s.ollama_url; setProv(s.ai_provider || "ollama");
+  await loadSystem(); pollPull(); checkUpdate(false); $("#modal").classList.add("open");
+}
+$("#btnSettings").onclick = openSettings; $("#syspill").onclick = openSettings;
+$("#mClose").onclick = () => $("#modal").classList.remove("open");
+$("#modal").onclick = e => { if (e.target.id === "modal") $("#modal").classList.remove("open"); };
+$("#sKeyClear").onclick = async e => { e.preventDefault(); await api("/api/settings",{method:"POST",json:{clear_key:true}}); toast("Key entfernt"); openSettings(); };
+let prov = "ollama";
+function setProv(v){ prov = v; document.querySelectorAll("#prov button").forEach(b=>b.classList.toggle("on", b.dataset.v===v));
+  $("#provOllama").hidden = v!=="ollama"; $("#provAnthropic").hidden = v!=="anthropic"; }
+document.querySelectorAll("#prov button").forEach(b => b.onclick = () => setProv(b.dataset.v));
+$("#olPull").onclick = async () => {
+  const model = $("#sOlModel").value.trim() || "qwen3:8b";
+  await api("/api/settings", {method:"POST", json:{ollama_model:model, ollama_url:$("#sOlUrl").value.trim() || "http://localhost:11434", ai_provider:"ollama"}});
+  await api("/api/ollama/pull", {method:"POST", json:{model}}); pollPull();
+};
+async function pollPull(){
+  const p = await api("/api/ollama/pull");
+  $("#olBarWrap").hidden = !p.active && !p.error && p.status !== "Fertig";
+  $("#olBar").style.width = (p.pct||0) + "%";
+  $("#olPullInfo").textContent = p.error ? "⚠️ " + p.error : p.active ? `${p.model}: ${p.status} ${p.pct ? Math.round(p.pct)+"%" : ""}` : (p.status==="Fertig" ? `✅ ${p.model} ist bereit` : "");
+  $("#olPull").disabled = p.active;
+  if (p.active) setTimeout(pollPull, 1000); else loadSystem();
+}
+let upd = null;
+async function checkUpdate(manual){
+  try { upd = await api("/api/update/check"); } catch (e) { if (manual) $("#updInfo").textContent = e.message; return; }
+  $("#verNow").textContent = upd.current;
+  $("#updpill").hidden = !upd.available;
+  $("#updApply").hidden = !upd.available;
+  $("#updNotes").hidden = !(upd.available && upd.notes); $("#updNotes").textContent = upd.notes || "";
+  $("#updInfo").textContent = !upd.configured ? "Update-Quelle noch nicht eingerichtet."
+    : upd.error ? upd.error : upd.available ? `Neue Version ${upd.latest} verfügbar.` : (manual ? "Du hast die neueste Version." : "");
+}
+$("#updCheck").onclick = () => checkUpdate(true);
+$("#updpill").onclick = openSettings;
+$("#updApply").onclick = async () => {
+  $("#updApply").disabled = true; $("#updInfo").textContent = "Update wird geladen…";
+  try {
+    const r = await api("/api/update/apply", {method:"POST"});
+    $("#updInfo").textContent = `Version ${r.version} installiert – Clip Studio startet neu (kann beim ersten Mal 1–2 Min. dauern)…`;
+    const t0 = Date.now();
+    const wait = async () => {
+      try { const s = await api("/api/system"); if (s.version === r.version) return location.reload(); } catch {}
+      if (Date.now() - t0 > 600000) { $("#updInfo").textContent = "Neustart dauert ungewöhnlich lange – schau ins schwarze Fenster."; return; }
+      setTimeout(wait, 2000);
+    };
+    setTimeout(wait, 3000);
+  } catch (e) { $("#updInfo").textContent = "⚠️ " + e.message; $("#updApply").disabled = false; }
+};
+$("#sSave").onclick = async () => {
+  await api("/api/settings", {method:"POST", json:{api_key:$("#sKey").value.trim(), ai_model:$("#sModel").value, hashtags:$("#sTags").value, font:$("#sFont").value,
+    ai_provider:prov, ollama_model:$("#sOlModel").value.trim() || "qwen3:8b", ollama_url:$("#sOlUrl").value.trim() || "http://localhost:11434"}});
+  toast("Gespeichert"); $("#modal").classList.remove("open"); loadSystem();
+};
+
+/* ---------------- new project form ---------------- */
+const PRESETS = {
+  stream:  {num:6, min:20, max:45, layout:"auto"},
+  chat:    {num:6, min:20, max:50, layout:"track"},
+  podcast: {num:5, min:25, max:55, layout:"track", ai:true},
+  custom:  null,
+};
+let layout = "auto";
+function setLayout(v){ layout=v; document.querySelectorAll("#layout button").forEach(b=>b.classList.toggle("on", b.dataset.v===v)); }
+document.querySelectorAll("#layout button").forEach(b => b.onclick = () => { setLayout(b.dataset.v); markCustom(); });
+function markCustom(){ document.querySelectorAll("#presets .chip").forEach(c=>c.classList.toggle("on", c.dataset.p==="custom")); }
+document.querySelectorAll("#presets .chip").forEach(ch => ch.onclick = () => {
+  document.querySelectorAll("#presets .chip").forEach(c=>c.classList.remove("on")); ch.classList.add("on");
+  const p = PRESETS[ch.dataset.p]; if (!p) return;
+  $("#num").value = p.num; $("#numOut").textContent = p.num; $("#min").value = p.min; $("#max").value = p.max; setLayout(p.layout);
+  if (p.ai && state.system.has_ai) $("#ai").checked = true;
+});
+$("#num").oninput = e => $("#numOut").textContent = e.target.value;
+["#min","#max"].forEach(s => $(s).addEventListener("input", markCustom));
+
+const drop = $("#drop"), fileIn = $("#file");
+drop.onclick = () => fileIn.click();
+fileIn.onchange = () => setFile(fileIn.files[0]);
+drop.ondragover = e => { e.preventDefault(); drop.classList.add("over"); };
+drop.ondragleave = () => drop.classList.remove("over");
+drop.ondrop = e => { e.preventDefault(); drop.classList.remove("over"); if (e.dataTransfer.files[0]) setFile(e.dataTransfer.files[0]); };
+function setFile(f){
+  state.file = f || null;
+  drop.classList.toggle("has", !!f);
+  $("#dropText").innerHTML = f ? `📼 <b>${esc(f.name)}</b> (${(f.size/1e6).toFixed(0)} MB) – <a href="#" id="clrFile">entfernen</a>` : "…oder Videodatei hierher ziehen / klicken zum Auswählen";
+  if (f) { $("#src").value = ""; setTimeout(()=>{ const a=$("#clrFile"); if(a) a.onclick=e=>{e.preventDefault();e.stopPropagation();fileIn.value="";setFile(null);}; }); }
+}
+$("#src").addEventListener("input", () => { if ($("#src").value && state.file) { fileIn.value=""; setFile(null); } });
+
+function formParams(){
+  return { num_clips:+$("#num").value, min:+$("#min").value, max:+$("#max").value, layout,
+    language:$("#lang").value, ai:$("#ai").checked, section:$("#section").value.trim(),
+    whisper_model:$("#whisper").value, facecam:$("#facecam").value.trim(), hashtags:$("#hashtags").value.trim(),
+    words_per_line:+$("#wpl").value, upper:$("#upper").checked, title_overlay:$("#titleov").checked };
+}
+$("#btnStart").onclick = async () => {
+  const p = formParams();
+  if (p.min >= p.max) return toast("Minimale Länge muss kleiner als die maximale sein");
+  if (p.facecam && !/^\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*,\s*[\d.]+\s*$/.test(p.facecam)) return toast("Facecam-Format: x,y,breite,höhe");
+  const btn = $("#btnStart"); btn.disabled = true;
+  try {
+    let job;
+    if (state.file) {
+      job = await upload(state.file, p);
+    } else {
+      p.source = $("#src").value.trim();
+      if (!p.source) { btn.disabled=false; return toast("Bitte Link einfügen oder Datei wählen"); }
+      job = await api("/api/jobs", {method:"POST", json:p});
+    }
+    $("#src").value = ""; fileIn.value=""; setFile(null); $("#uploadInfo").textContent = "";
+    await refreshJobs(); showJob(job.id);
+  } catch (e) { toast(e.message); }
+  btn.disabled = false;
+};
+function upload(file, params){
+  return new Promise((res, rej) => {
+    const fd = new FormData(); fd.append("file", file); fd.append("params", JSON.stringify(params));
+    const x = new XMLHttpRequest(); x.open("POST", "/api/jobs");
+    x.upload.onprogress = e => { if (e.lengthComputable) $("#uploadInfo").textContent = `Datei wird übernommen… ${Math.round(e.loaded/e.total*100)}%`; };
+    x.onload = () => { const d = JSON.parse(x.responseText||"{}"); x.status<300 ? res(d) : rej(new Error(d.error||"Upload fehlgeschlagen")); };
+    x.onerror = () => rej(new Error("Upload fehlgeschlagen")); x.send(fd);
+  });
+}
+
+/* ---------------- job list ---------------- */
+async function refreshJobs(){
+  state.jobs = await api("/api/jobs");
+  const el = $("#joblist");
+  if (!state.jobs.length) { el.innerHTML = '<div class="empty">Noch keine Projekte.</div>'; return; }
+  el.innerHTML = state.jobs.map(j => `
+    <div class="jobitem ${state.current===j.id?"active":""}" data-id="${j.id}">
+      <div class="t" title="${esc(j.title)}">${esc(j.title)}</div>
+      <div class="s"><span class="dot ${j.status==="done"?"ok":j.status==="error"?"err":j.status==="running"?"warn":""}"></span>
+        ${STATUS[j.status]||j.status}${j.clip_count?` · ${j.clip_count} Clips`:""} · ${ago(j.created)}</div>
+      ${j.status==="running"||j.status==="queued" ? `<div class="minibar"><b style="width:${j.progress||0}%"></b></div>`:""}
+    </div>`).join("");
+  el.querySelectorAll(".jobitem").forEach(i => i.onclick = () => showJob(i.dataset.id));
+}
+$("#btnNew").onclick = showNew;
+function showNew(){ state.current=null; $("#viewJob").hidden=true; $("#viewNew").hidden=false; refreshJobs(); }
+
+/* ---------------- job detail ---------------- */
+async function showJob(id){
+  if (state.current !== id) { state.cardKeys = new Set(); $("#jClips").innerHTML = ""; $("#jRerun").classList.remove("open"); }
+  state.current = id; $("#viewNew").hidden=true; $("#viewJob").hidden=false;
+  await renderJob(); refreshJobs();
+}
+async function renderJob(){
+  const id = state.current; if (!id) return;
+  let j; try { j = await api(`/api/jobs/${id}`); } catch { showNew(); return; }
+  if (id !== state.current) return;
+  state.job = j;
+  $("#jTitle").textContent = j.title || "Projekt";
+  $("#jSrc").textContent = j.params.source.includes("_uploads") ? "Hochgeladene Datei" : j.params.source;
+  $("#jWhen").textContent = ago(j.created) + (j.duration ? ` · Video ${fmt(j.duration)}` : "");
+  const b = $("#jBadge"); b.className = "badge " + j.status; b.textContent = STATUS[j.status] || j.status;
+  const active = j.status==="running" || j.status==="queued";
+  $("#jBar").style.width = (j.progress||0) + "%";
+  $("#jBarWrap").classList.toggle("anim", active);
+  $("#jStage").textContent = j.status==="queued" ? `In Warteschlange${j.queue_pos?` (Platz ${j.queue_pos})`:""} – wartet auf das vorherige Projekt` : (j.stage||"");
+  $("#jPct").textContent = active ? Math.round(j.progress||0) + "%" : "";
+  const warns = j.warnings || [];
+  $("#jWarn").hidden = !warns.length; $("#jWarn").innerHTML = warns.map(w => "⚠️ " + esc(w)).join("<br>");
+  $("#jErr").hidden = j.status !== "error"; $("#jErr").textContent = j.error ? "⚠️ " + j.error : "";
+  $("#jCancel").hidden = !active; $("#jRerunBtn").hidden = active || j.status !== "done";
+  $("#jRetry").hidden = !(j.status === "error" || j.status === "cancelled");
+  $("#jProgressCard").hidden = j.status==="done" && !warns.length && !$("#jRerun").classList.contains("open");
+  const log = $("#jLog"), atBottom = log.scrollTop + log.clientHeight >= log.scrollHeight - 20;
+  log.textContent = j.log.join("\n"); if (atBottom) log.scrollTop = log.scrollHeight;
+
+  // clips (keyed, so edits and playing videos are not disturbed)
+  const wrap = $("#jClips");
+  const files = new Set(j.clips.map(c=>c.file));
+  wrap.querySelectorAll(".clip[data-file]").forEach(el => { if (!files.has(el.dataset.file)) { el.remove(); state.cardKeys.delete(el.dataset.file); } });
+  j.clips.forEach((c, i) => {
+    if (state.cardKeys.has(c.file)) return;
+    state.cardKeys.add(c.file); wrap.querySelector(".placeholder-card")?.remove();
+    wrap.insertAdjacentHTML("beforeend", clipCard(j, c, i));
+    bindCard(wrap.lastElementChild, j, c);
+  });
+  wrap.querySelectorAll(".placeholder-card").forEach(e=>e.remove());
+  if (active && j.status==="running" && (j.progress||0) >= 60) {
+    wrap.insertAdjacentHTML("beforeend", `<div class="clip placeholder-card"><div class="placeholder">⏳ nächster Clip wird gerendert…</div></div>`);
+  }
+  if (!active && !j.clips.length && j.status==="done") wrap.innerHTML = '<div class="empty">Keine Clips übrig.</div>';
+}
+function clipCard(j, c, i){
+  const posted = (j.posted||{})[c.file] || {};
+  const v = `/media/${j.id}/${encodeURIComponent(c.file)}`;
+  return `<div class="clip" data-file="${esc(c.file)}">
+    <video src="${v}" poster="/thumb/${j.id}/${encodeURIComponent(c.file)}" controls preload="none" playsinline></video>
+    <div class="body">
+      <div class="meta"><span>#${i+1}</span><span>${Math.round(c.end-c.start)} s</span><span>⏱ ${fmt(c.start)}–${fmt(c.end)}</span>
+        <span class="score" title="Bewertung">★ ${c.score}</span><span>${LAYOUT[c.layout]||c.layout}</span></div>
+      <textarea spellcheck="true">${esc(c.post_text)}</textarea>
+      <div class="saved"></div>
+      <div class="row">
+        <button class="btn sm" data-a="copy">📋 Text kopieren</button>
+        <a class="btn sm" href="${v}?download=1" download>⬇ Download</a>
+        <button class="btn sm" data-a="reveal">📂</button>
+        <button class="btn sm danger" data-a="del" title="Clip löschen">🗑</button>
+      </div>
+      <div class="posted" title="Wo hast du den Clip schon gepostet?">
+        <button class="yt ${posted.yt?"on":""}" data-p="yt">YouTube</button>
+        <button class="ig ${posted.ig?"on":""}" data-p="ig">Instagram</button>
+        <button class="tt ${posted.tt?"on":""}" data-p="tt">TikTok</button>
+      </div>
+    </div></div>`;
+}
+function bindCard(el, j, c){
+  const url = `/api/jobs/${j.id}/clips/${encodeURIComponent(c.file)}`;
+  const ta = el.querySelector("textarea"), saved = el.querySelector(".saved");
+  let h; ta.oninput = () => { saved.textContent=""; clearTimeout(h); h = setTimeout(async () => {
+    await api(url, {method:"POST", json:{post_text: ta.value}}); saved.textContent = "✓ gespeichert"; }, 700); };
+  el.querySelector('[data-a="copy"]').onclick = async () => {
+    try { await navigator.clipboard.writeText(ta.value); } catch { ta.select(); document.execCommand("copy"); }
+    toast("Text kopiert – jetzt beim Posten einfügen");
+  };
+  el.querySelector('[data-a="reveal"]').onclick = () => api(`/api/jobs/${j.id}/open`, {method:"POST", json:{file:c.file}}).catch(e=>toast(e.message));
+  el.querySelector('[data-a="del"]').onclick = async () => {
+    if (!confirm("Diesen Clip löschen?")) return;
+    await api(url, {method:"DELETE"}); el.remove(); state.cardKeys.delete(c.file); toast("Clip gelöscht");
+  };
+  el.querySelectorAll(".posted button").forEach(b => b.onclick = async () => {
+    b.classList.toggle("on");
+    const posted = {}; el.querySelectorAll(".posted button").forEach(x => posted[x.dataset.p] = x.classList.contains("on"));
+    await api(url, {method:"POST", json:{posted}});
+  });
+}
+$("#jOpen").onclick = () => api(`/api/jobs/${state.current}/open`, {method:"POST", json:{}}).catch(e=>toast(e.message));
+$("#jCancel").onclick = async () => { await api(`/api/jobs/${state.current}/cancel`, {method:"POST"}); toast("Abgebrochen"); renderJob(); };
+$("#jDelete").onclick = async () => {
+  if (!confirm("Projekt inklusive aller Clips löschen?")) return;
+  await api(`/api/jobs/${state.current}`, {method:"DELETE"}); toast("Projekt gelöscht"); showNew();
+};
+$("#jRetry").onclick = async () => { await api(`/api/jobs/${state.current}/retry`, {method:"POST"}); toast("Startet erneut – Download wird wiederverwendet"); renderJob(); };
+$("#jRerunBtn").onclick = () => {
+  const p = state.job.params, r = $("#jRerun");
+  $("#rNum").value = p.num_clips||5; $("#rMin").value = p.min||20; $("#rMax").value = p.max||45;
+  $("#rLayout").value = p.layout||"auto"; $("#rAi").value = p.ai ? "1":"0"; $("#rAi").disabled = !state.system.has_ai;
+  r.classList.toggle("open"); $("#jProgressCard").hidden = false;
+};
+$("#rGo").onclick = async () => {
+  const job = await api(`/api/jobs/${state.current}/rerun`, {method:"POST", json:{
+    num_clips:+$("#rNum").value, min:+$("#rMin").value, max:+$("#rMax").value, layout:$("#rLayout").value, ai:$("#rAi").value==="1"}});
+  $("#jRerun").classList.remove("open"); await refreshJobs(); showJob(job.id);
+};
+
+/* ---------------- polling ---------------- */
+async function tick(){
+  try {
+    await refreshJobs();
+    const cur = state.jobs.find(j => j.id === state.current);
+    if (cur && (cur.status === "running" || cur.status === "queued" || state.job?.status !== cur.status)) await renderJob();
+  } catch {}
+  setTimeout(tick, 1500);
+}
+loadSystem(); checkUpdate(false); refreshJobs().then(() => { if (state.jobs[0] && ["running","queued"].includes(state.jobs[0].status)) showJob(state.jobs[0].id); });
+tick();
+</script>
+</body>
+</html>
